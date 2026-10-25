@@ -6,6 +6,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Match packageManager in package.json: the lockfile is written by npm 11.
+  NPM_VERSION = "11.7.0"
 
 [functions]
   node_bundler = "esbuild"
