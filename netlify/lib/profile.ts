@@ -110,10 +110,12 @@ const SCRIPT = `
       }],
       structuredContent: result,
     }).catch(() => {});
+    // content is an array of blocks, as the ext-apps SDK schema requires (the spec's
+    // prose example shows a single block, which hosts validating with the SDK reject).
     await mcpApp.request("ui/message", {
       role: "user",
-      content: { type: "text", text: "I've saved my profile. Now help me submit a talk to the CascadiaJS 2027 CFP." },
-    }).catch(() => {});
+      content: [{ type: "text", text: "I've saved my profile. Now help me submit a talk to the CascadiaJS 2027 CFP." }],
+    }).catch((error) => console.warn("ui/message failed:", error.message));
   }
 
   form.addEventListener("submit", async (event) => {
