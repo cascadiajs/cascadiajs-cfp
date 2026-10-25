@@ -1,0 +1,234 @@
+/* Shared styles for every page on cfp.cascadiajs.com. Tokens, type and page
+   chrome follow the CascadiaJS site (github.com/cascadiajs/cascadiajs:
+   src/styles/global.css, SiteHeader, SiteFooter, SimplePage, CtaButton). */
+
+:root {
+  --color-sound-navy: #112378;
+  --color-cascade-blue: #0033ff;
+  --color-emerald-city-green: #17c37b;
+  --color-madrona-yellow: #ffd007;
+  --color-seafoam-cream: #fffbeb;
+  --color-ink: #020800;
+  --color-cedar-cream: #fff5cc;
+  --color-overcast-gray: #cfd3e4;
+  --color-mint: #ccf1db;
+
+  --font-sans: freight-sans-pro, sans-serif;
+  --font-display: mono45-headline, sans-serif;
+  --font-serif: freight-macro-pro, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  /* Without this the implicit column grows to fit the widest code block. */
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--color-seafoam-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 200;
+  line-height: 1.125em;
+}
+
+p { line-height: 1.5; margin: 0 0 16px; }
+
+h1, h2, h3 {
+  margin: 32px 0 16px;
+  color: var(--color-sound-navy);
+  font-weight: 500;
+  line-height: 1.125em;
+}
+h1 { font-family: var(--font-display); font-size: 40px; margin: 8px 0; }
+h2 { font-family: var(--font-serif); font-size: 32px; }
+h3 { font-family: var(--font-serif); font-size: 24px; }
+
+strong { font-weight: 500; }
+
+a { color: var(--color-cascade-blue); }
+a:hover { color: var(--color-sound-navy); }
+
+ol, ul { margin: 0 0 16px; padding-inline-start: 1.5em; }
+li { padding: 4px; line-height: 1.5em; }
+
+/* Page chrome */
+
+.site-nav {
+  background: var(--color-emerald-city-green);
+  padding: 12px;
+  text-align: center;
+}
+.site-nav .inner { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.site-nav .logo img { display: block; height: 56px; width: auto; }
+.site-nav .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+.site-nav .links a {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 500;
+  color: var(--color-sound-navy);
+  text-decoration: none;
+  padding: 0 4px;
+}
+.site-nav .links a:hover { text-decoration: underline; }
+
+.page-title { background: var(--color-overcast-gray); }
+
+.column { padding: 16px; margin: 0 auto; width: 100%; max-width: 760px; }
+
+main > .column { padding-bottom: 64px; }
+main h2:first-child { margin-top: 16px; }
+
+.site-footer {
+  background: var(--color-sound-navy);
+  color: var(--color-cedar-cream);
+  padding: 32px;
+  text-align: center;
+  font-size: 14px;
+}
+.site-footer .inner { display: flex; flex-direction: column; gap: 16px; align-items: center; }
+.site-footer h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--color-cedar-cream);
+}
+.site-footer .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; }
+.site-footer a { color: var(--color-cedar-cream); text-decoration: none; }
+.site-footer a:hover { text-decoration: underline; }
+
+@media (min-width: 768px) {
+  .site-nav .inner { flex-direction: row; width: 70%; margin: 0 auto; }
+  .site-nav .links { margin-left: auto; }
+  .site-footer .inner { flex-direction: row; justify-content: space-between; width: 70%; margin: 0 auto; }
+}
+
+/* Components */
+
+/* Info callout (Callout.astro, variant="info"). */
+.callout {
+  background: var(--color-overcast-gray);
+  color: var(--color-sound-navy);
+  border-radius: 4px;
+  padding: 16px;
+  margin: 24px 0;
+  font-weight: 500;
+}
+.callout p { margin: 0; }
+.callout .label { display: block; font-family: var(--font-display); font-size: 16px; margin-bottom: 4px; }
+.callout code { font-size: 1.05rem; word-break: break-all; background: none; padding: 0; }
+
+.callout.warning { background: #ffcf07; text-align: center; }
+.callout i { margin-right: 6px; }
+
+.hero { display: block; width: 100%; height: auto; margin: 0 0 8px; }
+
+/* Lines with a leading Font Awesome icon (the tl;dr and perks lists). */
+.icon-list { list-style: none; padding: 0; }
+.icon-list li { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; }
+.icon-list i { width: 20px; flex: none; text-align: center; color: var(--color-sound-navy); }
+
+/* Topic chips, after TopicGrid.astro. */
+.topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; margin: 24px 0; }
+.topic-grid h3 { margin: 0 0 12px; font-size: 18px; }
+.topic-grid ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.topic-grid li {
+  padding: 6px 12px;
+  line-height: 1.375;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-sound-navy);
+  background: rgb(204 241 219 / 60%);
+  border: 1px solid rgb(23 195 123 / 30%);
+  border-radius: 16px;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: .85em;
+  font-weight: 400;
+  background: var(--color-cedar-cream);
+  padding: .1em .35em;
+  border-radius: 3px;
+}
+
+.snippet {
+  position: relative;
+  margin: 0 0 16px;
+  padding: 16px 16px 56px;
+  background: var(--color-cedar-cream);
+  border: 1px solid var(--color-overcast-gray);
+  border-radius: 4px;
+}
+.snippet pre { margin: 0; overflow-x: auto; }
+.snippet code { background: none; padding: 0; font-size: 14px; line-height: 1.5; }
+.snippet p { margin: 0; font-weight: 400; }
+
+/* Copy button, after the primary CtaButton. */
+.copy {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 6px 10px;
+  border: 3px solid var(--color-cascade-blue);
+  background: var(--color-cascade-blue);
+  color: var(--color-cedar-cream);
+  cursor: pointer;
+}
+.copy:hover { background: var(--color-sound-navy); border-color: var(--color-sound-navy); }
+
+/* Agent tabs. Before the script runs (or without JavaScript) the tab list is
+   hidden and each panel shows its own heading. */
+.tab-list {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 3px solid var(--color-overcast-gray);
+  margin-bottom: 16px;
+}
+.tab-list[hidden] { display: none; }
+.tab-list [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-bottom: -3px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 4px solid transparent;
+  background: none;
+  color: var(--color-sound-navy);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.tab-list [role="tab"]:hover { background: var(--color-cedar-cream); }
+.tab-list [role="tab"][aria-selected="true"] { border-bottom-color: var(--color-cascade-blue); }
+.tab-list [role="tab"]:focus-visible { outline: 3px solid var(--color-cascade-blue); outline-offset: -3px; }
+.tabs img { width: 20px; height: 20px; flex: none; }
+.tab-panel h3 { display: flex; align-items: center; gap: 8px; }
+.tabs.enhanced .tab-panel h3 { display: none; }
+@media (max-width: 600px) {
+  .tab-list { flex-wrap: wrap; overflow-x: visible; }
+  .tab-list [role="tab"] { padding: 8px 10px; font-size: 16px; }
+}
+
+/* Table, after .styled-table in MarkdownContent.astro. */
+.table-wrap { overflow-x: auto; margin: 24px 0; }
+table { border-collapse: collapse; font-size: 16px; width: 100%; min-width: 600px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 15px 12px 0; border-bottom: 1px solid var(--color-overcast-gray); }
+th { font-family: var(--font-serif); font-weight: 500; color: var(--color-sound-navy); }
+td:nth-child(-n + 2) { white-space: nowrap; }
+
+.muted { color: var(--color-sound-navy); opacity: .75; font-size: 16px; }

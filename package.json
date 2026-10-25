@@ -1,0 +1,24 @@
+{
+  "name": "cascadiajs-cfp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@netlify/database": "^2.0.1",
+    "@netlify/functions": "^4.1.4",
+    "jose": "6.2.12",
+    "zod": "^3.25.28"
+  },
+  "devDependencies": {
+    "netlify-cli": "^27.14.2",
+    "typescript": "^5.8.3"
+  }
+}

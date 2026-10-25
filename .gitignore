@@ -1,0 +1,7 @@
+node_modules/
+.netlify/
+dist/
+.env*
+!.env.example
+# Written by netlify dev's bundled Deno (edge-function runtime); this project has no edge functions.
+deno.lock
