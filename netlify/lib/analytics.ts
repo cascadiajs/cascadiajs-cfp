@@ -5,6 +5,13 @@ import { PostHog } from "posthog-node";
 // by netlify/functions/analytics.ts; server-side CFP events are sent with track().
 
 export const POSTHOG_HOST = "https://us.i.posthog.com";
+/**
+ * PostHog's managed reverse proxy, used by the browser so ad blockers don't drop page
+ * events. Server-side events go straight to POSTHOG_HOST: blockers don't see them.
+ */
+export const POSTHOG_PROXY_HOST = "https://g.cascadiajs.com";
+/** The PostHog app itself, for links such as the toolbar's when api_host is the proxy. */
+export const POSTHOG_UI_HOST = "https://us.posthog.com";
 
 /** The PostHog project API key. It is public by design: the browser snippet sends it too. */
 export const posthogKey = () => process.env.POSTHOG_KEY?.trim() || undefined;

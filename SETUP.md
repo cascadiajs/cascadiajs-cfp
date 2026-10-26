@@ -118,6 +118,7 @@ For local development, copy `.env.example` to `.env.local` (git ignores it) and 
 
 - **No cookies:** `cookieless_mode: "always"` sets no cookies and uses no browser storage, so no consent banner is needed. PostHog counts unique visitors with a hash on its servers. **Turn on cookieless mode in the PostHog project settings**, or PostHog ignores these events.
 - **No URL fragments:** `before_send` strips `#…` from every URL property, because the `/record` page carries its recording token in the fragment.
+- **Reverse proxy:** the browser sends events to `https://g.cascadiajs.com`, PostHog's managed reverse proxy (a Cloudflare CNAME), so ad blockers don't drop them. The snippet also loads PostHog's library from there, and `ui_host` points links to the PostHog app at `https://us.posthog.com`. Server-side events go straight to `us.i.posthog.com`; ad blockers don't see them.
 - Session recording is off. The MCP App forms shown inside agents don't load analytics.
 
 **Server-side CFP events.** Most of the CFP happens inside agents, so the server sends these with `posthog-node`:

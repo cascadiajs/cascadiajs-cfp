@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { POSTHOG_HOST, posthogKey } from "../lib/analytics.js";
+import { POSTHOG_PROXY_HOST, POSTHOG_UI_HOST, posthogKey } from "../lib/analytics.js";
 
 // /analytics.js: PostHog web analytics for the site's pages (public/index.html and the
 // server-rendered pages in netlify/lib/page.ts), served from here so the key comes from
@@ -11,7 +11,8 @@ const SNIPPET = `!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.
 
 const script = (key: string) => `${SNIPPET}
 posthog.init(${JSON.stringify(key)}, {
-  api_host: ${JSON.stringify(POSTHOG_HOST)},
+  api_host: ${JSON.stringify(POSTHOG_PROXY_HOST)},
+  ui_host: ${JSON.stringify(POSTHOG_UI_HOST)},
   defaults: "2026-08-30",
   // No cookies or browser storage; PostHog counts visitors with a server-side hash.
   // Also needs cookieless mode turned on in the PostHog project settings.
