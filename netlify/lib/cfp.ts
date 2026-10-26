@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getDatabase } from "@netlify/database";
 import { z } from "zod";
+import { track } from "./analytics.js";
 import { CfpError } from "./errors.js";
 export { attachVideo, createVideoUpload } from "./recordings.js";
 
@@ -100,6 +101,7 @@ export async function saveProfile(email: string, input: ProfileInput) {
       profile_completed_at = coalesce(profile_completed_at, now())
     WHERE id = ${profile.id}
   `;
+  await track(profile.profile_completed_at ? "profile_updated" : "profile_completed", profile.id);
   return { profile_id: String(profile.id), email_address: profile.email_address };
 }
 
@@ -136,6 +138,7 @@ export async function submitCfp(email: string, input: SubmissionInput, origin: s
 
   const { id, submitted_at } = rows[0];
   const result = { submission_id: String(id), submitted_at: new Date(submitted_at).toISOString() };
+  await track("talk_submitted", profile.id, { submission_id: result.submission_id, video: recordingToken ? "recording" : "link" });
   if (!recordingToken) return { ...result, video_url: input.video_submission_url! };
 
   // The token goes in the fragment so it is never sent to a server or written to logs.

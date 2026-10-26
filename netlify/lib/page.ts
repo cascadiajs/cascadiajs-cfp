@@ -18,6 +18,7 @@ export function sitePage(options: {
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="https://use.typekit.net/nln6hzq.css">
   <link rel="stylesheet" href="/styles.css">
+  <script src="/analytics.js" defer></script>
   ${options.head ?? ""}
 </head>
 <body>

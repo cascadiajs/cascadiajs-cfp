@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getDatabase } from "@netlify/database";
+import { track } from "./analytics.js";
 import { CfpError } from "./errors.js";
 import { cancelUpload, createDirectUpload, deleteAsset, getAsset, getUpload, playerUrl, validVideo } from "./mux.js";
 
@@ -130,28 +131,37 @@ export async function processRecording(id: string) {
   try {
     const upload = await getUpload(row.mux_upload_id!);
     let error: string | null = null;
+    let reason = "";
     if (row.expired) {
       if (upload.asset_id) await deleteAsset(upload.asset_id);
       else if (upload.status === "waiting") await cancelUpload(upload.id);
       error = "This recording expired before it was completed. Submit again or use an existing video link.";
+      reason = "expired";
     } else if (["errored", "cancelled", "timed_out"].includes(upload.status)) {
       if (upload.asset_id) await deleteAsset(upload.asset_id);
       error = "The video upload failed or expired. Submit again or use an existing video link.";
+      reason = "upload_failed";
     } else if (upload.asset_id) {
       const asset = await getAsset(upload.asset_id);
       if (asset?.status === "preparing") return;
       if (!asset || !validVideo(asset)) {
         if (asset) await deleteAsset(asset.id);
         error = "The recording must be a playable video of at most two minutes. Submit again or use an existing video link.";
+        reason = "invalid_video";
       } else {
         const url = await playerUrl(asset);
-        await db.sql`
+        const attached = await db.sql`
           UPDATE public.submissions SET video_submission_url = ${url}
           WHERE id = ${id} AND video_submission_url IS NULL AND recording_expires_at > now()
+          RETURNING id
         `;
+        if (attached.length) await track("video_attached", row.profile_id, { submission_id: id, video: "recording" });
       }
     }
-    if (error) await db.sql`UPDATE public.submissions SET video_error = ${error} WHERE id = ${id}`;
+    if (error) {
+      await db.sql`UPDATE public.submissions SET video_error = ${error} WHERE id = ${id}`;
+      await track("video_failed", row.profile_id, { submission_id: id, reason });
+    }
   } finally {
     await db.sql`UPDATE public.submissions SET upload_check_until = NULL WHERE id = ${id}`;
   }

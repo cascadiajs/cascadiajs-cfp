@@ -106,8 +106,31 @@ Scheduled functions only run automatically on published deploys. For local devel
 | `AUTH0_DOMAIN` | Yes | The Auth0 tenant domain (for example `cascadiajs.us.auth0.com`) or your Auth0 custom domain |
 | `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | Yes | A Mux access token with Mux Video read and write permissions (including deletion), for recorded videos |
 | `VIDEO_UPLOADS_DAILY_LIMIT`, `VIDEO_UPLOADS_TOTAL_LIMIT` | No | Global upload allocation caps; defaults 100 per UTC day and 1,000 total. Zero disables new allocations. |
+| `POSTHOG_KEY` | No | PostHog project API key (US Cloud) for [analytics](#analytics). Without it, nothing is sent. Set it for the Production context only, so previews and local development don't send events. |
 
 For local development, copy `.env.example` to `.env.local` (git ignores it) and fill in the values; `netlify dev` loads it at startup. Without `AUTH0_DOMAIN`, `/mcp` answers with a configuration error.
+
+## Analytics
+
+[PostHog](https://posthog.com) (US Cloud) is on when `POSTHOG_KEY` is set. The code is in `netlify/lib/analytics.ts`.
+
+**Web pages.** `public/index.html` and the server-rendered pages (`netlify/lib/page.ts`, such as `/record`) load `/analytics.js` (`netlify/functions/analytics.ts`), which serves PostHog's snippet with the key, or an empty script without one. It captures pageviews and autocaptured clicks:
+
+- **No cookies:** `cookieless_mode: "always"` sets no cookies and uses no browser storage, so no consent banner is needed. PostHog counts unique visitors with a hash on its servers. **Turn on cookieless mode in the PostHog project settings**, or PostHog ignores these events.
+- **No URL fragments:** `before_send` strips `#…` from every URL property, because the `/record` page carries its recording token in the fragment.
+- Session recording is off. The MCP App forms shown inside agents don't load analytics.
+
+**Server-side CFP events.** Most of the CFP happens inside agents, so the server sends these with `posthog-node`:
+
+| Event | When | Properties |
+| --- | --- | --- |
+| `profile_completed` | A presenter's profile is saved complete for the first time (chat or form) | |
+| `profile_updated` | A complete profile is saved again | |
+| `talk_submitted` | A talk is saved (chat or form) | `submission_id`, `video`: `link` or `recording` |
+| `video_attached` | A recorded video passes validation and is attached, by the recorder or the cleanup job | `submission_id`, `video` |
+| `video_failed` | A recording is rejected | `submission_id`, `reason`: `expired`, `upload_failed` or `invalid_video` |
+
+Events are tied to `profile_<id>`, never the email, with no person profile (`$process_person_profile: false`) and no IP-based location (the IP would be Netlify's). Each is sent before the request returns, with a 3-second timeout; a PostHog failure is logged and never fails the request. Web visitors and presenters aren't linked: the pages are anonymous and the CFP happens in agents.
 
 ## Run locally
 
