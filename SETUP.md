@@ -121,17 +121,23 @@ For local development, copy `.env.example` to `.env.local` (git ignores it) and 
 - **Reverse proxy:** the browser sends events to `https://g.cascadiajs.com`, PostHog's managed reverse proxy (a Cloudflare CNAME), so ad blockers don't drop them. The snippet also loads PostHog's library from there, and `ui_host` points links to the PostHog app at `https://us.posthog.com`. Server-side events go straight to `us.i.posthog.com`; ad blockers don't see them.
 - Session recording is off. The MCP App forms shown inside agents don't load analytics.
 
-**Server-side CFP events.** Most of the CFP happens inside agents, so the server sends these with `posthog-node`:
+**Server-side events.** Most of the CFP happens inside agents, so the server sends these with `posthog-node`:
 
 | Event | When | Properties |
 | --- | --- | --- |
+| `mcp_connected` | A signed-in agent connects (MCP `initialize`) | `client_name`, `client_version`, `protocol_version` |
+| `mcp_tool_called` | Any tool call | `tool`; `called_by`: `model` or `app` (the forms' own tools); `outcome`: `error`, `ok` or the result's status, such as `needs_details`, `profile_complete` or `submitted` |
 | `profile_completed` | A presenter's profile is saved complete for the first time (chat or form) | |
 | `profile_updated` | A complete profile is saved again | |
 | `talk_submitted` | A talk is saved (chat or form) | `submission_id`, `video`: `link` or `recording` |
 | `video_attached` | A recorded video passes validation and is attached, by the recorder or the cleanup job | `submission_id`, `video` |
 | `video_failed` | A recording is rejected | `submission_id`, `reason`: `expired`, `upload_failed` or `invalid_video` |
 
-Events are tied to `profile_<id>`, never the email, with no person profile (`$process_person_profile: false`) and no IP-based location (the IP would be Netlify's). Each is sent before the request returns, with a 3-second timeout; a PostHog failure is logged and never fails the request. Web visitors and presenters aren't linked: the pages are anonymous and the CFP happens in agents.
+Every event sent during an MCP request also has `mcp_client`, the agent's name as it says in `initialize` (lowercased, such as `claude-ai`), and `mcp_apps`, whether it shows the forms. The server is stateless, so both ride in the session id it returns from `initialize` (`ui.claude-ai.<uuid>`). Events from the `/record` page and the cleanup job don't have them.
+
+Events are tied to `profile_<id>`, never the email, with no person profile (`$process_person_profile: false`) and no IP-based location (the IP would be Netlify's). A PostHog failure is logged and never fails the request. The `mcp_*` events are sent after the response, so agents don't wait for them; the CFP events are sent before it, with a 3-second timeout. Sign-ins that fail at Auth0 never reach the server: see the Auth0 logs for those. Web visitors and presenters aren't linked: the pages are anonymous and the CFP happens in agents.
+
+**CFP funnel.** In PostHog, create a new insight of type **Funnel** with the steps `mcp_connected` → `profile_completed` → `talk_submitted` → `video_attached`, a 14-day conversion window, and breakdown by the event property `mcp_client` (attribution: first step). Save it to a dashboard. A funnel of `mcp_tool_called` filtered by `tool` and `outcome` shows where presenters stall, for example `submit-cfp` with `outcome = needs_details` and no `talk_submitted` after it.
 
 ## Run locally
 

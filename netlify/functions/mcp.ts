@@ -1,6 +1,7 @@
-import type { Config } from "@netlify/functions";
+import type { Config, Context } from "@netlify/functions";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { posthogKey, track, withAnalytics } from "../lib/analytics.js";
 import { appResourceMeta, MCP_APP_MIME_TYPE } from "../lib/app.js";
 import { authConfig, type AuthConfig } from "../lib/auth/config.js";
 import { verifyAccessToken } from "../lib/auth/tokens.js";
@@ -402,20 +403,66 @@ function tokenIssuer(token: string) {
   }
 }
 
-type Message = { method?: string; params?: any };
+type Message = { id?: string | number; method?: string; params?: any };
+
+/** The agent's name as a session id part: lowercase letters, digits, - and _ only. */
+const clientTag = (name: unknown) =>
+  (typeof name === "string" ? name : "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "unknown";
 
 /**
- * Whether the agent supports MCP Apps. It says so only in initialize, and this server is
- * stateless, so the answer rides in the session id the server returns from initialize:
- * agents send that id back on every later request, and the transport doesn't check it.
- * An agent that sends no id gets the text-only server, which works everywhere.
+ * Whether the agent supports MCP Apps, and which agent it is. It says both only in
+ * initialize, and this server is stateless, so they ride in the session id the server
+ * returns from initialize ("ui.claude-ai.<uuid>"): agents send that id back on every later
+ * request, and the transport doesn't check it. An agent that sends no id gets the
+ * text-only server, which works everywhere.
  */
-function uiSession(request: Request, messages: Message[]) {
+function agentSession(request: Request, messages: Message[]) {
   const initialize = messages.find((message) => message?.method === "initialize");
-  if (!initialize) return { ui: request.headers.get("mcp-session-id")?.startsWith("ui.") ?? false };
+  if (!initialize) {
+    const parts = request.headers.get("mcp-session-id")?.split(".") ?? [];
+    // Sessions from before the agent tag was added are "ui.<uuid>".
+    return { ui: parts[0] === "ui", client: parts.length === 3 ? parts[1] : "unknown" };
+  }
   const mimeTypes = initialize.params?.capabilities?.extensions?.[UI_EXTENSION]?.mimeTypes;
   const ui = Array.isArray(mimeTypes) && mimeTypes.includes(MCP_APP_MIME_TYPE);
-  return { ui, sessionId: `${ui ? "ui" : "text"}.${crypto.randomUUID()}` };
+  const client = clientTag(initialize.params?.clientInfo?.name);
+  return { ui, client, initialize, sessionId: `${ui ? "ui" : "text"}.${client}.${crypto.randomUUID()}` };
+}
+
+/** Tools only the MCP App forms call, as opposed to the model. */
+const APP_TOOLS = new Set(["save-profile", "create-submission", "create-video-upload", "attach-video"]);
+
+/**
+ * mcp_connected for initialize and mcp_tool_called for each tool call, with the tool's
+ * outcome: "error", the status in its result (such as needs_details or submitted) or "ok".
+ * Keyed by the presenter's profile id like the CFP events, so they line up in funnels.
+ */
+async function trackMessages(email: string, messages: Message[], response: Response) {
+  const calls = messages.filter((message) => message?.method === "initialize" || message?.method === "tools/call");
+  if (!calls.length || !posthogKey()) return;
+  const replies = await response.json().catch(() => null);
+  const replyFor = (id: Message["id"]) =>
+    (Array.isArray(replies) ? replies : [replies]).find((reply) => reply && reply.id === id);
+  const { id: profileId } = await profileForEmail(email);
+  for (const message of calls) {
+    const params = message.params ?? {};
+    if (message.method === "initialize") {
+      await track("mcp_connected", profileId, {
+        client_name: params.clientInfo?.name,
+        client_version: params.clientInfo?.version,
+        protocol_version: params.protocolVersion,
+      });
+      continue;
+    }
+    const reply = replyFor(message.id);
+    const outcome =
+      !reply || reply.error || reply.result?.isError ? "error" : (reply.result?.structuredContent?.status ?? "ok");
+    await track("mcp_tool_called", profileId, {
+      tool: params.name,
+      called_by: APP_TOOLS.has(params.name) ? "app" : "model",
+      outcome,
+    });
+  }
 }
 
 // Local development only: one line per MCP message, to see what a connected agent does.
@@ -435,7 +482,7 @@ function logRequest(messages: Message[], who: string) {
   }
 }
 
-export default async (request: Request) => {
+export default async (request: Request, context: Context) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: CORS });
 
@@ -453,19 +500,27 @@ export default async (request: Request) => {
   if (process.env.NETLIFY_DEV === "true") logRequest(messages, signedIn.email ?? `(not signed in: ${signedIn.reason})`);
   if (!signedIn.email) return signedIn.response;
 
-  const { ui, sessionId } = uiSession(request, messages);
-  const server = createServer(origin, signedIn.email, ui);
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
+  const email = signedIn.email;
+  const { ui, client, sessionId } = agentSession(request, messages);
+  // Every event this request sends, CFP ones included, says which agent it came from.
+  return withAnalytics({ mcp_client: client, mcp_apps: ui }, async () => {
+    const server = createServer(origin, email, ui);
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
 
-  await server.connect(transport);
-  const response = await transport.handleRequest(request);
-  const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(CORS)) headers.set(name, value);
-  if (sessionId && response.ok) headers.set("Mcp-Session-Id", sessionId);
-  return new Response(response.body, { status: response.status, headers });
+    await server.connect(transport);
+    const response = await transport.handleRequest(request);
+    // Sent after responding, so the agent doesn't wait for PostHog.
+    context.waitUntil(
+      trackMessages(email, messages, response.clone()).catch((error) => console.error("MCP analytics failed", error)),
+    );
+    const headers = new Headers(response.headers);
+    for (const [name, value] of Object.entries(CORS)) headers.set(name, value);
+    if (sessionId && response.ok) headers.set("Mcp-Session-Id", sessionId);
+    return new Response(response.body, { status: response.status, headers });
+  });
 };
 
 export const config: Config = { path: "/mcp" };

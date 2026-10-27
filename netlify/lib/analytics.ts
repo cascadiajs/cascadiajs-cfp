@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { PostHog } from "posthog-node";
 
 // PostHog analytics (US Cloud). Off unless POSTHOG_KEY is set, so local development and
@@ -18,6 +19,14 @@ export const posthogKey = () => process.env.POSTHOG_KEY?.trim() || undefined;
 
 let client: PostHog | undefined;
 
+const context = new AsyncLocalStorage<Record<string, unknown>>();
+
+/**
+ * Runs fn with properties added to every event it tracks, such as the agent (mcp_client)
+ * on everything an MCP request does, however deep in the CFP code the event is sent.
+ */
+export const withAnalytics = <T>(properties: Record<string, unknown>, fn: () => T) => context.run(properties, fn);
+
 /**
  * Sends a server-side CFP event for a presenter, identified only by their profile id: no
  * email, no person profile and no IP-based location (the IP is Netlify's, not theirs).
@@ -31,7 +40,7 @@ export async function track(event: string, profileId: string | number, propertie
     await client.captureImmediate({
       distinctId: `profile_${profileId}`,
       event,
-      properties: { ...properties, $process_person_profile: false },
+      properties: { ...context.getStore(), ...properties, $process_person_profile: false },
       disableGeoip: true,
     });
   } catch (error) {
