@@ -24,7 +24,7 @@ export function sitePage(options: {
 <body>
 <header class="site-nav">
   <div class="inner">
-    <a class="logo" href="https://cascadiajs.com/"><img src="/images/logo-wordmark-horizontal.svg" alt="CascadiaJS logo"></a>
+    <a class="logo" href="https://cascadiajs.com/"><img src="/images/cjs-icon-blue.svg" alt="CascadiaJS"></a>
     <nav class="links">
       <a href="https://cascadiajs.com/2027">CascadiaJS 2027</a>
       <a href="https://cascadiajs.com/code-of-conduct">Code of Conduct</a>
