@@ -116,8 +116,13 @@ export async function createVideoUpload(token: string, email?: string) {
   return { upload_url: upload.url, uploaded: false };
 }
 
-/** Also runs on a schedule, including when a browser disappears before completion. */
-export async function processRecording(id: string) {
+/**
+ * Checks a submission's upload with Mux, then attaches the video or records why it failed.
+ * Runs when the recorder finishes and when Mux reports the upload's outcome (the webhook),
+ * so a video is attached even if the browser closes. Returns "retry" when the outcome isn't
+ * known yet: the video is still processing, or another check of it is under way.
+ */
+export async function processRecording(id: string): Promise<"done" | "retry"> {
   const db = getDatabase();
   const rows = await db.sql`
     UPDATE public.submissions SET upload_check_until = now() + interval '30 seconds', upload_checked_at = now()
@@ -127,7 +132,13 @@ export async function processRecording(id: string) {
     RETURNING *, recording_expires_at <= now() AS expired
   `;
   const row = rows[0] as Recording | undefined;
-  if (!row) return;
+  if (!row) {
+    const pending = await db.sql`
+      SELECT 1 FROM public.submissions
+      WHERE id = ${id} AND video_submission_url IS NULL AND video_error IS NULL AND mux_upload_id IS NOT NULL
+    `;
+    return pending.length ? "retry" : "done";
+  }
   try {
     const upload = await getUpload(row.mux_upload_id!);
     let error: string | null = null;
@@ -143,7 +154,7 @@ export async function processRecording(id: string) {
       reason = "upload_failed";
     } else if (upload.asset_id) {
       const asset = await getAsset(upload.asset_id);
-      if (asset?.status === "preparing") return;
+      if (asset?.status === "preparing") return "retry";
       if (!asset || !validVideo(asset)) {
         if (asset) await deleteAsset(asset.id);
         error = "The recording must be a playable video of at most two minutes. Submit again or use an existing video link.";
@@ -162,9 +173,16 @@ export async function processRecording(id: string) {
       await db.sql`UPDATE public.submissions SET video_error = ${error} WHERE id = ${id}`;
       await track("video_failed", row.profile_id, { submission_id: id, reason });
     }
+    return "done";
   } finally {
     await db.sql`UPDATE public.submissions SET upload_check_until = NULL WHERE id = ${id}`;
   }
+}
+
+/** The submission a Mux upload belongs to. */
+export async function submissionForUpload(uploadId: string) {
+  const rows = await getDatabase().sql`SELECT id FROM public.submissions WHERE mux_upload_id = ${uploadId}`;
+  return rows[0] ? String(rows[0].id) : undefined;
 }
 
 export async function attachVideo(token: string, email?: string) {

@@ -92,12 +92,15 @@ The initial migration `0001_init.sql` includes the recording expiry fields and u
 - Across the site: **100 uploads per UTC day, 1,000 total**, configurable with `VIDEO_UPLOADS_DAILY_LIMIT` and `VIDEO_UPLOADS_TOTAL_LIMIT`. Set either to `0` to stop issuing new upload URLs. Failed uploads still count; deleting a submission frees its upload. Reservations take a transaction-scoped advisory lock, so concurrent calls can't both pass the count.
 - Recording tokens expire after **24 hours**; Mux upload URLs expire after **15 minutes**. Completed tokens permit read-only completion retries until expiry, but cannot allocate another upload.
 - Newly uploaded media has no playback ID until Mux reports a ready video track and a positive duration of at most **125 seconds** (the recorder stops at 120 seconds; five seconds allow browser timing drift). Invalid media is deleted.
-- `recording-cleanup` runs every five minutes on published Netlify deploys, checking up to ten pending uploads per run. It validates and attaches successful videos even if the browser closes, deletes invalid/expired assets, cancels expired pending uploads, and clears expired recording tokens. Failed provider calls remain eligible for later cleanup; monitor this function's failures.
+- A Mux webhook (`/webhooks/mux`, `netlify/functions/mux-webhook.ts`) attaches successful videos even if the browser closes. When Mux reports a video ready or failed, or an upload failed or cancelled, it runs the same check as the recorder: it attaches a valid video and deletes an invalid one, recording why. Requests must carry a valid `Mux-Signature` made with `MUX_WEBHOOK_SECRET`. Other events are ignored without touching the database. While a video is still processing or another check of it is under way, it answers 503 and Mux retries, for up to 24 hours. Failures show in the webhook's delivery log in the Mux dashboard.
+- Mux sends nothing when an unused upload link times out. Nothing was uploaded, so there's nothing to clean up: `list-submissions` reports an upload with no result after an hour as missing a video. Expired recording tokens stay in the database but are rejected, since every lookup checks the expiry.
 - Upload retries skip the file transfer once it succeeded. Server completion is idempotent, and overlapping validation calls share a database lease.
 
 Mux direct uploads do **not** provide an application-specific byte or duration limit before ingestion. Validation and deletion happen after ingestion, so initial processing may incur charges. The global caps bound upload counts, not dollars; set them to an acceptable exposure and configure provider billing alerts. Enforcing byte/duration limits before any Mux processing would require a separate upload staging and media inspection service.
 
-Scheduled functions only run automatically on published deploys. For local development or previews, invoke `recording-cleanup` explicitly through Netlify's function tooling. No public cleanup endpoint or webhook secret is required. Use a separate Mux environment for development.
+There's no scheduled job: a job that queried the database every few minutes kept Netlify DB from ever pausing, and its compute was billed around the clock. Mux can't reach a local server, so locally the recorder's own completion call attaches videos. Use a separate Mux environment for development.
+
+**Mux webhook setup.** In the Mux dashboard for the production environment, go to Settings → Webhooks, create a webhook with the URL `https://cfp.cascadiajs.com/webhooks/mux`, and copy its signing secret into the `MUX_WEBHOOK_SECRET` environment variable in Netlify.
 
 ## Environment variables
 
@@ -105,6 +108,7 @@ Scheduled functions only run automatically on published deploys. For local devel
 | --- | --- | --- |
 | `AUTH0_DOMAIN` | Yes | The Auth0 tenant domain (for example `cascadiajs.us.auth0.com`) or your Auth0 custom domain |
 | `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | Yes | A Mux access token with Mux Video read and write permissions (including deletion), for recorded videos |
+| `MUX_WEBHOOK_SECRET` | Yes, in production | The signing secret of the Mux webhook that points at `/webhooks/mux` (see [Mux webhook setup](#upload-abuse-protection)) |
 | `VIDEO_UPLOADS_DAILY_LIMIT`, `VIDEO_UPLOADS_TOTAL_LIMIT` | No | Global upload allocation caps; defaults 100 per UTC day and 1,000 total. Zero disables new allocations. |
 | `POSTHOG_KEY` | No | PostHog project API key (US Cloud) for [analytics](#analytics). Without it, nothing is sent. Set it for the Production context only, so previews and local development don't send events. |
 
@@ -130,10 +134,10 @@ For local development, copy `.env.example` to `.env.local` (git ignores it) and 
 | `profile_completed` | A presenter's profile is saved complete for the first time (chat or form) | |
 | `profile_updated` | A complete profile is saved again | |
 | `talk_submitted` | A talk is saved (chat or form) | `submission_id`, `video`: `link` or `recording` |
-| `video_attached` | A recorded video passes validation and is attached, by the recorder or the cleanup job | `submission_id`, `video` |
+| `video_attached` | A recorded video passes validation and is attached, by the recorder or the Mux webhook | `submission_id`, `video` |
 | `video_failed` | A recording is rejected | `submission_id`, `reason`: `expired`, `upload_failed` or `invalid_video` |
 
-Every event sent during an MCP request also has `mcp_client`, the agent's name as it says in `initialize` (lowercased, such as `claude-ai`), and `mcp_apps`, whether it shows the forms. The server is stateless, so both ride in the session id it returns from `initialize` (`ui.claude-ai.<uuid>`). Events from the `/record` page and the cleanup job don't have them.
+Every event sent during an MCP request also has `mcp_client`, the agent's name as it says in `initialize` (lowercased, such as `claude-ai`), and `mcp_apps`, whether it shows the forms. The server is stateless, so both ride in the session id it returns from `initialize` (`ui.claude-ai.<uuid>`). Events from the `/record` page and the Mux webhook don't have them.
 
 Events are tied to `profile_<id>`, never the email, with no person profile (`$process_person_profile: false`) and no IP-based location (the IP would be Netlify's). A PostHog failure is logged and never fails the request. The `mcp_*` events are sent after the response, so agents don't wait for them; the CFP events are sent before it, with a 3-second timeout. Sign-ins that fail at Auth0 never reach the server: see the Auth0 logs for those. Web visitors and presenters aren't linked: the pages are anonymous and the CFP happens in agents.
 

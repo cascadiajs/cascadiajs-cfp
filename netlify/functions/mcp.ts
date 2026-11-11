@@ -107,7 +107,7 @@ const VIDEO_STATUS: Record<Submission["video_status"], string> = {
   processing: "video uploaded and still processing",
   awaiting_recording: "video not recorded yet; use the recording link given when it was submitted",
   failed: "video failed",
-  missing: "no video; the recording window closed. Submit the talk again with a video link or a new recording",
+  missing: "no video; the recording wasn't completed and its link no longer works. Submit the talk again with a video link or a new recording",
 };
 
 const describeSubmissions = (submissions: Submission[]) => {

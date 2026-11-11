@@ -157,7 +157,10 @@ type VideoStatus = "attached" | "processing" | "awaiting_recording" | "failed" |
 export async function listSubmissions(email: string) {
   const rows = (await getDatabase().sql`
     SELECT s.id, s.submitted_at, s.talk_title, s.talk_description, s.topics, s.status, s.video_submission_url,
-      s.video_error, s.mux_upload_id IS NOT NULL AS uploading, coalesce(s.recording_expires_at > now(), false) AS recording_open
+      s.video_error, s.mux_upload_id IS NOT NULL AS uploading, coalesce(s.recording_expires_at > now(), false) AS recording_open,
+      -- Upload links last 15 minutes and Mux reports no timeout, so an upload with no result
+      -- an hour after it started was abandoned.
+      coalesce(s.upload_reserved_at < now() - interval '1 hour', false) AS upload_stale
     FROM public.submissions s JOIN public.profiles p ON p.id = s.profile_id
     WHERE lower(p.email_address) = lower(${email})
     ORDER BY s.submitted_at DESC, s.id DESC
@@ -172,11 +175,12 @@ export async function listSubmissions(email: string) {
     video_error: string | null;
     uploading: boolean;
     recording_open: boolean;
+    upload_stale: boolean;
   }[];
   return rows.map((row) => {
     const video_status: VideoStatus = row.video_submission_url ? "attached"
       : row.video_error ? "failed"
-      : row.recording_open ? (row.uploading ? "processing" : "awaiting_recording")
+      : row.recording_open && !(row.uploading && row.upload_stale) ? (row.uploading ? "processing" : "awaiting_recording")
       : "missing";
     return {
       submission_id: String(row.id),
