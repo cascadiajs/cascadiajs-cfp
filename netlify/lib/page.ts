@@ -1,11 +1,19 @@
 // Server-rendered pages share the site chrome from public/index.html and public/styles.css.
 
+/** Escapes text for HTML content and attribute values. */
+export const escapeHtml = (value: string) =>
+  value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
+
+/** JSON for a <script type="application/json"> element: "<" is escaped so it can't close the element. */
+export const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
+
 export function sitePage(options: {
   status: number;
   title: string;
   body: string;
   head?: string;
   script?: string;
+  headers?: Record<string, string>;
 }) {
   return new Response(
     `<!doctype html>
@@ -52,6 +60,6 @@ export function sitePage(options: {
 ${options.script ? `<script>${options.script}</script>` : ""}
 </body>
 </html>`,
-    { status: options.status, headers: { "Content-Type": "text/html; charset=utf-8" } },
+    { status: options.status, headers: { "Content-Type": "text/html; charset=utf-8", ...options.headers } },
   );
 }

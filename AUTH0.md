@@ -1,6 +1,6 @@
 # Auth0 setup
 
-The CFP's MCP server signs presenters in with Auth0. This guide sets up two Auth0 tenants:
+The CFP signs presenters in with Auth0, both in agents (the MCP server) and on the website (`/submit`). This guide sets up two Auth0 tenants:
 
 - **Development:** used with `netlify dev` on `http://localhost:8888`.
 - **Production:** used by `https://cfp.cascadiajs.com`.
@@ -17,7 +17,10 @@ Do every step once for each tenant, using the values in that tenant's column. Au
 | API signing algorithm | `RS256` | `RS256` |
 | Action name | `Add CFP email claim` | `Add CFP email claim` |
 | Action claim name | `https://cfp.cascadiajs.com/email` | `https://cfp.cascadiajs.com/email` |
-| Where `AUTH0_DOMAIN` goes | `.env.local` in this project | Netlify environment variables for the `cascadiajs-cfp` site |
+| Website application name | `CascadiaJS CFP website (dev)` | `CascadiaJS CFP website` |
+| Website callback URL | `http://localhost:8888/auth/callback` | `https://cfp.cascadiajs.com/auth/callback` |
+| Website logout URL | `http://localhost:8888/submit` | `https://cfp.cascadiajs.com/submit` |
+| Where `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` and `SESSION_SECRET` go | `.env.local` in this project | Netlify environment variables for the `cascadiajs-cfp` site |
 | Dynamic Client Registration | On, for testing with agents and tools that lack CIMD support | Off unless an agent you need requires it |
 
 Things to get exactly right:
@@ -39,7 +42,7 @@ You don't set the tenant domain; Auth0 assigns it, and you copy it into the app.
 1. Go to **Applications → Applications** and open any application. Every tenant has a **Default App**.
 2. On its **Settings** tab, copy the **Domain** field, for example `cascadiajs-cfp-dev.us.auth0.com`.
 
-This is the `AUTH0_DOMAIN` value. Use just the domain: no `https://` and no trailing slash. If you later add a custom domain (step 9), use that instead.
+This is the `AUTH0_DOMAIN` value. Use just the domain: no `https://` and no trailing slash. If you later add a custom domain (step 10), use that instead.
 
 ## 3. Create the API
 
@@ -138,19 +141,42 @@ The server identifies presenters by email, so Auth0 has to put it in the access 
 
 Same code and claim name in both tenants.
 
-## 9. Branding (production; optional in development)
+## 9. Create the website application
+
+`/submit` signs presenters in with its own application, separate from the agents. It's a first-party app that keeps a client secret on the server, so it uses the standard authorization code flow and needs no API or third-party access.
+
+1. Go to **Applications → Applications → Create Application**.
+2. Enter the name from the table, choose **Regular Web Applications**, and click **Create**. Skip the quickstart.
+3. On the **Settings** tab, set:
+
+   | Field | Development | Production |
+   | --- | --- | --- |
+   | Allowed Callback URLs | `http://localhost:8888/auth/callback` | `https://cfp.cascadiajs.com/auth/callback` |
+   | Allowed Logout URLs | `http://localhost:8888/submit` | `https://cfp.cascadiajs.com/submit` |
+   | Allowed Web Origins | leave empty | leave empty |
+
+   Under **Credentials**, keep **Authentication Method** as **Client Secret (Post)**. Under **Advanced Settings → Grant Types**, keep **Authorization Code** on. Click **Save**.
+4. On the **Connections** tab, turn on **email** (the passwordless connection from step 7) and turn every other connection off, so presenters sign in the same way as in agents.
+5. Copy **Client ID** and **Client Secret** from the **Settings** tab. They're `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET` (step 11).
+
+The Identifier First authentication profile from step 7.6 applies to this application too. The email Action from step 8 runs as well; the website reads the email from the ID token instead, so nothing else is needed.
+
+## 10. Branding (production; optional in development)
 
 - **Custom domain:** **Branding → Custom Domains**, for example `auth.cascadiajs.com`, so presenters see your domain instead of `auth0.com`. Once it's verified, use it as `AUTH0_DOMAIN` instead of the tenant domain.
 - **Login page:** **Branding → Universal Login**, with the CascadiaJS logo and colors: navy `#112378`, emerald `#17c37b`, cream `#fffbeb`.
 - **Email provider:** **Branding → Email Provider**. Auth0's built-in provider is rate-limited and meant for testing, so set up your own provider for production.
 - **Email template:** **Branding → Email Templates → Verification Code (for Passwordless)**, with CascadiaJS wording.
 
-## 10. Connect the app
+## 11. Connect the app
 
 **Development:**
-1. Add the development tenant domain from step 2 to `.env.local` in this project:
+1. Add the development tenant domain from step 2, the website application's credentials from step 9, and a new session secret to `.env.local` in this project:
    ```
    AUTH0_DOMAIN=cascadiajs-cfp-dev.us.auth0.com
+   AUTH0_CLIENT_ID=<website application Client ID>
+   AUTH0_CLIENT_SECRET=<website application Client Secret>
+   SESSION_SECRET=<output of: openssl rand -base64 32>
    ```
 2. Restart the dev server:
    ```bash
@@ -164,7 +190,7 @@ Same code and claim name in both tenants.
 
 **Production:**
 1. In Netlify, open the `cascadiajs-cfp` site and go to **Site configuration → Environment variables**.
-2. Add `AUTH0_DOMAIN` with the production tenant domain from step 2 (or your custom domain).
+2. Add `AUTH0_DOMAIN` with the production tenant domain from step 2 (or your custom domain), `AUTH0_CLIENT_ID` and `AUTH0_CLIENT_SECRET` from the production website application (step 9), and a new `SESSION_SECRET` (`openssl rand -base64 32`; don't reuse the development one). Mark `AUTH0_CLIENT_SECRET` and `SESSION_SECRET` as secret.
 3. Deploy, then check:
    ```bash
    curl https://cfp.cascadiajs.com/.well-known/oauth-protected-resource/mcp
@@ -177,7 +203,7 @@ curl https://<tenant domain>/.well-known/openid-configuration
 ```
 Look for `"client_id_metadata_document_supported": true` with `"none"` in `token_endpoint_auth_methods_supported` (what Claude needs for CIMD), or a `registration_endpoint` where Dynamic Client Registration is on.
 
-## 11. Test a sign-in
+## 12. Test a sign-in
 
 1. In your agent, add (or reconnect) the MCP server:
 
@@ -193,6 +219,8 @@ In development, the dev server logs one `[mcp]` line per request with the signed
 
 Agents that run in the cloud, like Claude on the web, may not be able to reach `localhost`. If so, test development with an agent on your machine, such as Claude Code or Claude Desktop.
 
+**Website:** open `/submit` (`http://localhost:8888/submit` or `https://cfp.cascadiajs.com/submit`), click **Sign in with email**, and enter your email and the code. You should come back signed in, with the profile form (or, if you already completed it through an agent with the same email, the talk form).
+
 ## Troubleshooting
 
 | What you see | Likely cause | Fix |
@@ -202,5 +230,9 @@ Agents that run in the cloud, like Claude on the web, may not be able to reach `
 | Auth0's "Oops, something went wrong" page; the log says `no connections enabled for the client` | The email connection isn't promoted to domain level, or the authentication profile isn't Identifier First | Steps 7.4 and 7.6 |
 | Sign-in succeeds but the agent still gets errors (401) | The token has no email: the Action isn't deployed or isn't in the post-login flow | Step 8 |
 | The agent can't register | Neither CIMD nor Dynamic Client Registration is on | Step 5 |
-| `/mcp` answers "Sign-in isn't configured on this server" | `AUTH0_DOMAIN` isn't set | Step 10 |
-| Works locally but not in production | The production tenant is missing a step, or Netlify's `AUTH0_DOMAIN` points at the development tenant | Repeat the steps for production; check step 10 |
+| `/mcp` answers "Sign-in isn't configured on this server" | `AUTH0_DOMAIN` isn't set | Step 11 |
+| `/submit` says website submissions aren't available | `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` or `SESSION_SECRET` isn't set | Step 11 |
+| Auth0 says the callback URL isn't allowed | The website application's Allowed Callback URLs don't include this site's `/auth/callback` | Step 9 |
+| `/submit` says "Signing in didn't work"; the server log says the token exchange failed | Wrong `AUTH0_CLIENT_SECRET`, or the application isn't a Regular Web Application using Client Secret (Post) | Step 9 |
+| `/submit` says "Signing in didn't work"; the server log says the ID token has no verified email | The email connection isn't enabled for the website application, so another connection was used | Step 9.4 |
+| Works locally but not in production | The production tenant is missing a step, or Netlify's `AUTH0_DOMAIN` points at the development tenant | Repeat the steps for production; check step 11 |

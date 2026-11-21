@@ -26,7 +26,7 @@ function globalLimit(name: string, fallback: number) {
   return value;
 }
 
-const unavailable = () => new CfpError(401, "This recording link is invalid or expired. Ask your agent to submit again, or contact info@cascadiajs.com.");
+const unavailable = () => new CfpError(401, "This recording link is invalid or expired. Submit your talk again, or contact info@cascadiajs.com.");
 
 async function recordingForToken(token: string, email?: string): Promise<Recording> {
   const rows = await getDatabase().sql`

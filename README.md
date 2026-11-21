@@ -84,6 +84,12 @@ What have I submitted to the CascadiaJS 2027 CFP?
 
 In agents that support interactive apps, such as Claude, each step appears as a form in the chat. Other agents ask you for the same details in the conversation.
 
+## Prefer the website?
+
+You can also submit without an agent at [cfp.cascadiajs.com/submit](https://cfp.cascadiajs.com/submit). Sign in with your email and a one-time code, then fill in the same forms your agent shows: your profile (first time only), your talk, and your 2-minute video. The page also lists the talks you've submitted and where each video stands.
+
+Your profile and talks are tied to your email, so if you use the same email on the website and in your agent, you'll see the same profile and submissions in both.
+
 ## Recording your video
 
 When you choose to record:
@@ -95,7 +101,7 @@ When you choose to record:
 
 Your video isn't made public: only people with the link can watch it, like an unlisted YouTube video.
 
-If the recorder doesn't appear, or your agent blocks the camera, your agent gives you a link to record the video in your browser instead.
+If the recorder doesn't appear, or your agent blocks the camera, your agent gives you a link to record the video in your browser instead. On the website, the recorder is part of the page; if you leave before recording, use the **Record it now** link in your list of submissions (it works in the same browser for 24 hours).
 
 **What to say in your 2 minutes:** this isn't a mini-talk, just describe your idea informally.
 - Introduce yourself: name, company, role.

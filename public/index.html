@@ -35,7 +35,7 @@
       <li><i class="fas fa-video" aria-hidden="true"></i> CFP submissions are 2-minute videos</li>
       <li><i class="fas fa-clock" aria-hidden="true"></i> Conference talks are 25 minutes</li>
       <li><i class="fas fa-calendar-alt" aria-hidden="true"></i> CFP closes on Jan 10, 2027</li>
-      <li><i class="fas fa-robot" aria-hidden="true"></i> Submit with your AI agent through our MCP server</li>
+      <li><i class="fas fa-robot" aria-hidden="true"></i> Submit with your AI agent through our MCP server, or <a href="/submit">on our website</a></li>
     </ul>
 
     <div class="callout">
@@ -136,13 +136,13 @@
       <li>Explain why it's exciting - and include details (technologies, techniques, etc)</li>
     </ul>
     <p>We won't make the videos public, so no need to worry about random Internet people seeing them. But we feel this is a good opportunity to start building a comfort level with talking about your idea in front of an audience.</p>
-    <p>The easiest way is to record it right in your agent: when you submit without a video link, your agent shows a recorder (or gives you a link to one in your browser) that records up to 2 minutes and attaches the video for you.</p>
-    <p>Prefer to record it yourself? Upload it to a public but obfuscated place, then give your agent the link. Some suggestions: YouTube (mark as unlisted), Dropbox, S3, your own web host.</p>
+    <p>The easiest way is to record it right in your agent: when you submit without a video link, your agent shows a recorder (or gives you a link to one in your browser) that records up to 2 minutes and attaches the video for you. Submitting on our website works the same way.</p>
+    <p>Prefer to record it yourself? Upload it to a public but obfuscated place, then give your agent (or the website's form) the link. Some suggestions: YouTube (mark as unlisted), Dropbox, S3, your own web host.</p>
     <div class="callout warning">
       <p><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> Please double-check your URL in Incognito mode. Any video we can't reach will not be considered!</p>
     </div>
 
-    <h3>Submit with your AI agent</h3>
+    <h3 id="submit-with-your-ai-agent">Submit with your AI agent</h3>
     <ol>
       <li><strong>Sign in.</strong> When you connect your agent (see below), it opens a page where you sign in with your email and a one-time code sent to your inbox. You only do this once; your agent keeps you signed in, and there's no password or key to copy around.</li>
       <li><strong>Fill in your profile.</strong> Your agent calls <code>create-profile</code>. In agents that support it, a form appears for your name, location, social links and a few questions.</li>
@@ -151,6 +151,9 @@
     </ol>
     <p>Once your agent is connected (see below), try asking it:</p>
     <div class="snippet"><pre><code>Help me submit a talk to the CascadiaJS 2027 CFP.</code></pre></div>
+
+    <h3>Or submit on our website</h3>
+    <p>Rather not use an agent? <a href="/submit">Submit on our website</a> instead. Sign in with your email and a one-time code, then fill in the same forms your agent would show you: your profile, your talk, and your 2-minute video. Use the same email in both places and you'll see the same profile and talks.</p>
 
     <h2>Connect your agent</h2>
     <p>The server uses Streamable HTTP. When you add it, your agent will ask you to sign in with your email. Pick your agent:</p>
@@ -241,7 +244,7 @@
     <p>For the purposes of the CFP, please record the 2-minute video using ASL and include an attached transcript. Our Talk Review Committee will use both the video and the transcript to evaluate your proposal.</p>
 
     <h3>Do I have to use an AI agent?</h3>
-    <p>Yes. Submissions go through an AI agent connected to our MCP server, which handles your sign-in, profile, talk details and video. If that doesn't work for you, <a href="mailto:info@cascadiajs.com">email us</a> and we'll help you submit.</p>
+    <p>No. An AI agent connected to our MCP server is the easiest way, but you can also <a href="/submit">submit on our website</a> with the same forms. If neither works for you, <a href="mailto:info@cascadiajs.com">email us</a> and we'll help you submit.</p>
   </div>
 </main>
 

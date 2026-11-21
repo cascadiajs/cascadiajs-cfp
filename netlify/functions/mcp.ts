@@ -503,7 +503,7 @@ export default async (request: Request, context: Context) => {
   const email = signedIn.email;
   const { ui, client, sessionId } = agentSession(request, messages);
   // Every event this request sends, CFP ones included, says which agent it came from.
-  return withAnalytics({ mcp_client: client, mcp_apps: ui }, async () => {
+  return withAnalytics({ channel: "mcp", mcp_client: client, mcp_apps: ui }, async () => {
     const server = createServer(origin, email, ui);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

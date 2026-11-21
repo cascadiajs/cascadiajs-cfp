@@ -1,11 +1,18 @@
-// Shared pieces for the MCP Apps (io.modelcontextprotocol/ui, 2026-01-26) that this server
-// shows inside agents: the profile form for create-profile and the video recorder for
-// submit-cfp. Each app is a self-contained HTML document the host loads into a sandboxed
-// iframe and talks to over postMessage.
+// Shared pieces for the CFP's forms: the profile form (profile.ts), the talk form
+// (submission.ts) and the video recorder (recorder.ts). Each form is a component, markup
+// plus a script, that runs in two places:
+//
+// - Inside agents, as an MCP App (io.modelcontextprotocol/ui, 2026-01-26): a self-contained
+//   HTML document the host loads into a sandboxed iframe. It calls this server's tools
+//   through the host with mcpApp.callTool (APP_BRIDGE_SCRIPT).
+// - On this site's pages (/submit and /record), where cfpSite.callTool (SITE_API_SCRIPT)
+//   makes the same tool calls as requests to this site's API.
+//
+// The components only ever see a callTool function, so they work the same in both.
 
 export const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 
-/** Styles shared by every app, scoped to the app's root element (`.mcp-app`). */
+/** Styles shared by every component, scoped to its root element (`.mcp-app`, in agents and on the site). */
 export const APP_STYLES = `
   .mcp-app { --navy: #112378; --blue: #0033ff; --cream: #fff5cc; --gray: #cfd3e4; --mint: #ccf1db; }
   .mcp-app [hidden] { display: none !important; }
@@ -113,6 +120,41 @@ const mcpApp = (() => {
     connect,
     on: (method, handler) => (handlers[method] = handler),
   };
+})();
+`;
+
+/**
+ * Defines `cfpSite`, the site pages' counterpart to `mcpApp.callTool`: the same tool names,
+ * arguments and results, sent to this site's API instead of through an agent. Profile and
+ * talk calls use the signed-in session cookie; recording calls use the recording token.
+ */
+export const SITE_API_SCRIPT = `
+const cfpSite = (() => {
+  const ROUTES = {
+    "save-profile": "/api/profile",
+    "create-submission": "/api/submissions",
+    "create-video-upload": "/api/recordings/upload",
+    "attach-video": "/api/recordings/complete",
+  };
+
+  async function callTool(name, args) {
+    const path = ROUTES[name];
+    if (!path) throw new Error("Unknown action: " + name);
+    const recording = name === "create-video-upload" || name === "attach-video";
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: recording
+        ? { Authorization: "Bearer " + args.recording_token }
+        : { "Content-Type": "application/json" },
+      body: recording ? undefined : JSON.stringify(args),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "Something went wrong. Please try again.");
+    return body;
+  }
+
+  return { callTool };
 })();
 `;
 

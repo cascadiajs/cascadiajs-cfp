@@ -1,15 +1,18 @@
-// The 2-minute video recorder. The same markup and script run in two places:
+// The 2-minute video recorder component. The same markup and script run in three places:
 //
 // - Inside the agent, as the last step of the submit-cfp MCP App (submission.ts), which
 //   calls cfpRecorder.begin() with the recording token once the talk is saved. There it
 //   uploads through the app-only tools create-video-upload and attach-video.
+// - On the /submit page, as the last step of the same talk form.
 // - At /record#token=…, as a fallback for agents that can't show MCP Apps or that
-//   block the camera. There it reads the token from the fragment and calls the REST API.
+//   block the camera. There it reads the token from the fragment.
 //
-// Either way the browser PUTs the recording straight to Mux; it never passes through
-// a Netlify Function (request bodies there are capped at about 6 MB).
+// Whoever embeds it calls cfpRecorder.connect() with a callTool function (see app.ts);
+// on the site, cfpSite.callTool sends the same calls to the REST API. Either way the
+// browser PUTs the recording straight to Mux; it never passes through a Netlify Function
+// (request bodies there are capped at about 6 MB).
 
-import { APP_BRIDGE_SCRIPT } from "./app.js";
+import { SITE_API_SCRIPT } from "./app.js";
 
 export const RECORDER_STYLES = `
   .recorder video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #020800; border-radius: 4px; margin: 0 0 12px; object-fit: cover; }
@@ -75,40 +78,39 @@ export const RECORDER_MARKUP = `
   </section>
 </div>`;
 
-// Runs after APP_BRIDGE_SCRIPT, which defines mcpApp. Defines cfpRecorder.
+// Defines cfpRecorder. Call cfpRecorder.connect() before begin():
+//   callTool(name, args)  required: mcpApp.callTool in agents, cfpSite.callTool on the site
+//   openStandalone(url)   optional: opens /record in the browser when the camera is blocked
+//   onAttached(result)    optional: called once a recorded video is attached
+//   doneNote              optional: added after the success message
 export const RECORDER_SCRIPT_BODY = `
 const cfpRecorder = (() => {
   const MAX_SECONDS = 120;
   const root = document.querySelector(".recorder");
   const ref = (name) => root.querySelector('[data-ref="' + name + '"]');
   const show = (state) => root.querySelectorAll("[data-state]").forEach((s) => (s.hidden = s.dataset.state !== state));
-  const embedded = mcpApp.embedded;
 
+  let settings = { callTool: null, openStandalone: null, onAttached: null, doneNote: "You can close this window." };
   let uploaded = false;
   let token = null, recordUrl = null, stream = null, recorder = null, recording = null, retry = null;
+
+  function connect(options) {
+    settings = { ...settings, ...options };
+  }
 
   function fail(message, options = {}) {
     stopCamera();
     ref("error-message").textContent = message;
     retry = options.retry || null;
     root.querySelector('[data-action="retry"]').hidden = !retry;
-    const offerStandalone = Boolean(options.standalone && embedded && recordUrl);
+    const offerStandalone = Boolean(options.standalone && settings.openStandalone && recordUrl);
     root.querySelector('[data-action="open-standalone"]').hidden = !offerStandalone;
     show("error");
   }
 
-  async function callServer(action) {
-    if (embedded) {
-      const name = action === "upload" ? "create-video-upload" : "attach-video";
-      return mcpApp.callTool(name, { recording_token: token });
-    }
-    const response = await fetch("/api/recordings/" + (action === "upload" ? "upload" : "complete"), {
-      method: "POST",
-      headers: { Authorization: "Bearer " + token },
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw Object.assign(new Error(body.error || "Something went wrong."), { status: response.status });
-    return body;
+  function callServer(action) {
+    const name = action === "upload" ? "create-video-upload" : "attach-video";
+    return settings.callTool(name, { recording_token: token });
   }
 
   // Starts the recorder for a saved submission. note is an optional line shown above it.
@@ -214,12 +216,7 @@ const cfpRecorder = (() => {
         }
       }
       finish(attached.video_url, "Your video is attached to your submission.");
-      if (embedded) {
-        mcpApp.request("ui/update-model-context", {
-          content: [{ type: "text", text: "The presenter recorded their 2-minute CFP video and it is now attached to submission " + attached.submission_id + ": " + attached.video_url }],
-          structuredContent: attached,
-        }).catch(() => {});
-      }
+      if (settings.onAttached) settings.onAttached(attached);
     } catch (error) {
       fail(error.message, { retry: upload });
     }
@@ -237,7 +234,7 @@ const cfpRecorder = (() => {
     } catch {
       return fail("The video link must be an absolute HTTP or HTTPS URL.");
     }
-    ref("done-message").textContent = message + " You can close this window.";
+    ref("done-message").textContent = settings.doneNote ? message + " " + settings.doneNote : message;
     link.href = url.href;
     show("done");
   }
@@ -249,9 +246,9 @@ const cfpRecorder = (() => {
     else if (action === "stop" && recorder && recorder.state === "recording") recorder.stop();
     else if (action === "upload") upload();
     else if (action === "retry" && retry) retry();
-    else if (action === "open-standalone") {
-      mcpApp.request("ui/open-link", { url: recordUrl })
-        .then((result) => { if (result && result.isError) throw new Error(); })
+    else if (action === "open-standalone" && settings.openStandalone) {
+      Promise.resolve()
+        .then(() => settings.openStandalone(recordUrl))
         .catch(() => {
           const note = ref("standalone-link");
           note.textContent = "Open this link in your browser: " + recordUrl;
@@ -260,15 +257,16 @@ const cfpRecorder = (() => {
     }
   });
 
-  if (!embedded) {
-    const linkToken = new URLSearchParams(location.hash.slice(1)).get("token");
-    if (linkToken) begin(linkToken, null);
-    else fail("This link is missing its recording token. Use the link your agent gave you.");
-  }
-
-  return { begin, finish, fail, stopCamera };
+  return { connect, begin, finish, fail, stopCamera };
 })();
 `;
 
-/** The recorder's script, including the host bridge (unused on the /record page). */
-export const RECORDER_SCRIPT = APP_BRIDGE_SCRIPT + RECORDER_SCRIPT_BODY;
+/** The /record page's script: the recorder, for the recording token in the URL fragment. */
+export const RECORD_PAGE_SCRIPT = `${SITE_API_SCRIPT}${RECORDER_SCRIPT_BODY}
+cfpRecorder.connect({ callTool: cfpSite.callTool });
+(() => {
+  const token = new URLSearchParams(location.hash.slice(1)).get("token");
+  if (token) cfpRecorder.begin(token, null);
+  else cfpRecorder.fail("This link is missing its recording token. Use the recording link you were given when you submitted your talk.");
+})();
+`;

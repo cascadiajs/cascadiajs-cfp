@@ -1,16 +1,21 @@
-// The profile form, shown as the MCP App for create-profile when the signed-in presenter's
-// profile is missing required details. It is pre-filled with anything saved before and
-// whatever the agent passed, and saves through the app-only save-profile tool. The email
-// comes from sign-in, so it is shown but not editable. Agents that can't show MCP Apps
-// never see it: they ask for the missing details in chat and call create-profile again.
+// The profile form component. It runs in two places:
+//
+// - Inside agents, as the MCP App for create-profile (PROFILE_APP_HTML), when the signed-in
+//   presenter's profile is missing required details. It is pre-filled with anything saved
+//   before and whatever the agent passed. Agents that can't show MCP Apps never see it:
+//   they ask for the missing details in chat and call create-profile again.
+// - On the /submit page (submit-page.ts), pre-filled with the saved profile.
+//
+// Either way it saves through save-profile (see callTool in app.ts). The email comes from
+// sign-in, so it is shown but not editable.
 
 import { appDocument } from "./app.js";
 
-const STYLES = `
+export const PROFILE_FORM_STYLES = `
   .profile-form .signed-in { font-size: 15px; }
 `;
 
-const MARKUP = `
+export const PROFILE_FORM_MARKUP = `
 <div class="profile-form mcp-app" aria-live="polite">
   <section data-state="waiting"><p class="muted">Loading the profile form…</p></section>
 
@@ -51,7 +56,7 @@ const MARKUP = `
 
   <section data-state="done" hidden>
     <div class="notice success">
-      <p><strong>Your profile is saved</strong> for <span data-ref="email"></span>. Next, your agent will help you submit a talk.</p>
+      <p><strong>Your profile is saved</strong> for <span data-ref="email"></span>. <span data-ref="done-next"></span></p>
     </div>
   </section>
 
@@ -60,13 +65,22 @@ const MARKUP = `
   </section>
 </div>`;
 
-const SCRIPT = `
-(() => {
+// Defines cfpProfileForm. Call cfpProfileForm.connect() before open():
+//   callTool(name, args)    required: mcpApp.callTool in agents, cfpSite.callTool on the site
+//   onSaved(result, data)   called with save-profile's result and the saved details
+export const PROFILE_FORM_SCRIPT = `
+const cfpProfileForm = (() => {
   const root = document.querySelector(".profile-form");
   const form = root.querySelector("form");
   const ref = (name) => root.querySelector('[data-ref="' + name + '"]');
   const show = (state) => root.querySelectorAll("[data-state]").forEach((s) => (s.hidden = s.dataset.state !== state));
   const OPTIONAL = ["state", "x_url", "linkedin_url", "bluesky_url", "other_url"];
+
+  let settings = { callTool: null, onSaved: null };
+
+  function connect(options) {
+    settings = { ...settings, ...options };
+  }
 
   function fail(message) {
     ref("error-message").textContent = message;
@@ -78,44 +92,31 @@ const SCRIPT = `
       if (value === undefined || value === null) continue;
       const field = form.elements[name];
       if (!field) continue;
-      if (name === "travel_covered") form.querySelector('[name="travel_covered"][value="' + value + '"]').checked = true;
+      if (name === "travel_covered") {
+        const choice = form.querySelector('[name="travel_covered"][value="' + value + '"]');
+        if (choice) choice.checked = true;
+      }
       else if (name === "confirmation") field.checked = value === true;
       else field.value = value;
     }
   }
 
-  function saved(email) {
-    ref("email").textContent = email;
-    show("done");
-  }
-
-  function onToolResult(result) {
-    const data = result.structuredContent || {};
-    if (result.isError) return fail(mcpApp.text(result) || "Saving the profile failed.");
-    if (data.status === "profile_complete") return saved(data.email_address);
-    ref("form-email").textContent = data.email_address || "";
-    prefill(data.prefill);
+  // Shows the form for the signed-in email, pre-filled with values.
+  function open(email, values) {
+    form.reset();
+    ref("form-error").hidden = true;
+    ref("form-email").textContent = email || "";
+    prefill(values);
     show("form");
     const firstEmpty = [...form.elements].find((el) => el.required && !el.value && el.type !== "radio" && el.type !== "checkbox");
     if (firstEmpty) firstEmpty.focus({ preventScroll: true });
   }
 
-  // Tells the agent the profile is saved, then sends a chat message so it moves on to the
-  // talk: ui/update-model-context alone waits for the presenter's next message.
-  async function continueToTalk(result) {
-    await mcpApp.request("ui/update-model-context", {
-      content: [{
-        type: "text",
-        text: "The presenter saved their CascadiaJS 2027 CFP profile (" + result.email_address + ") using the create-profile form. Next, call submit-cfp to submit a talk.",
-      }],
-      structuredContent: result,
-    }).catch(() => {});
-    // content is an array of blocks, as the ext-apps SDK schema requires (the spec's
-    // prose example shows a single block, which hosts validating with the SDK reject).
-    await mcpApp.request("ui/message", {
-      role: "user",
-      content: [{ type: "text", text: "I've saved my profile. Now help me submit a talk to the CascadiaJS 2027 CFP." }],
-    }).catch((error) => console.warn("ui/message failed:", error.message));
+  // Shows that the profile is saved, followed by what happens next.
+  function saved(email, next) {
+    ref("email").textContent = email;
+    ref("done-next").textContent = next || "";
+    show("done");
   }
 
   form.addEventListener("submit", async (event) => {
@@ -137,9 +138,8 @@ const SCRIPT = `
     button.disabled = true;
     button.textContent = "Saving…";
     try {
-      const result = await mcpApp.callTool("save-profile", data);
-      saved(result.email_address);
-      continueToTalk(result);
+      const result = await settings.callTool("save-profile", data);
+      if (settings.onSaved) settings.onSaved(result, data);
     } catch (error) {
       formError.textContent = error.message;
       formError.hidden = false;
@@ -150,11 +150,54 @@ const SCRIPT = `
     }
   });
 
-  if (!mcpApp.embedded) return fail("This form only works inside an AI agent.");
-  mcpApp.on("ui/notifications/tool-result", onToolResult);
-  mcpApp.on("ui/notifications/tool-cancelled", () => fail("Saving your profile was cancelled."));
-  mcpApp.connect({ name: "cascadiajs-cfp-profile", version: "1.0.0" }).catch(() => fail("Couldn't connect to your agent."));
+  return { connect, open, saved, fail };
 })();
 `;
 
-export const PROFILE_APP_HTML = appDocument(STYLES, MARKUP, SCRIPT);
+// The MCP App glue: opens the form from create-profile's result and tells the agent when
+// the profile is saved.
+const APP_SCRIPT = `
+(() => {
+  // Tells the agent the profile is saved, then sends a chat message so it moves on to the
+  // talk: ui/update-model-context alone waits for the presenter's next message.
+  async function continueToTalk(result) {
+    await mcpApp.request("ui/update-model-context", {
+      content: [{
+        type: "text",
+        text: "The presenter saved their CascadiaJS 2027 CFP profile (" + result.email_address + ") using the create-profile form. Next, call submit-cfp to submit a talk.",
+      }],
+      structuredContent: result,
+    }).catch(() => {});
+    // content is an array of blocks, as the ext-apps SDK schema requires (the spec's
+    // prose example shows a single block, which hosts validating with the SDK reject).
+    await mcpApp.request("ui/message", {
+      role: "user",
+      content: [{ type: "text", text: "I've saved my profile. Now help me submit a talk to the CascadiaJS 2027 CFP." }],
+    }).catch((error) => console.warn("ui/message failed:", error.message));
+  }
+
+  const NEXT = "Next, your agent will help you submit a talk.";
+
+  function onToolResult(result) {
+    const data = result.structuredContent || {};
+    if (result.isError) return cfpProfileForm.fail(mcpApp.text(result) || "Saving the profile failed.");
+    if (data.status === "profile_complete") return cfpProfileForm.saved(data.email_address, NEXT);
+    cfpProfileForm.open(data.email_address, data.prefill);
+  }
+
+  cfpProfileForm.connect({
+    callTool: mcpApp.callTool,
+    onSaved: (result) => {
+      cfpProfileForm.saved(result.email_address, NEXT);
+      continueToTalk(result);
+    },
+  });
+
+  if (!mcpApp.embedded) return cfpProfileForm.fail("This form only works inside an AI agent.");
+  mcpApp.on("ui/notifications/tool-result", onToolResult);
+  mcpApp.on("ui/notifications/tool-cancelled", () => cfpProfileForm.fail("Saving your profile was cancelled."));
+  mcpApp.connect({ name: "cascadiajs-cfp-profile", version: "1.0.0" }).catch(() => cfpProfileForm.fail("Couldn't connect to your agent."));
+})();
+`;
+
+export const PROFILE_APP_HTML = appDocument(PROFILE_FORM_STYLES, PROFILE_FORM_MARKUP, PROFILE_FORM_SCRIPT + APP_SCRIPT);
