@@ -3,9 +3,9 @@
 // - Agents: the MCP server is an OAuth protected resource. It tells agents to sign in with
 //   the Auth0 tenant (protected resource metadata) and checks the access tokens Auth0
 //   issues for this server's API (authConfig).
-// - The website: /submit signs presenters in with the tenant's "website" application
-//   (authorization code flow) and keeps them signed in with a session cookie
-//   (websiteAuthConfig, session.ts).
+// - The website: /submit (presenters) and /review (reviewers) sign in with the tenant's
+//   "website" application (authorization code flow) and keep people signed in with a
+//   session cookie (websiteAuthConfig, session.ts).
 
 /** Access-token claim holding the presenter's verified email, added by the Auth0 post-login Action. */
 export const EMAIL_CLAIM = "https://cfp.cascadiajs.com/email";
@@ -43,6 +43,14 @@ const WEBSITE_VARIABLES = ["AUTH0_DOMAIN", "AUTH0_CLIENT_ID", "AUTH0_CLIENT_SECR
 /** Whether every variable website sign-in needs is set. */
 export const websiteSignInConfigured = () => WEBSITE_VARIABLES.every((name) => process.env[name]?.trim());
 
+/** The pages that sign in with the website application; sign-in and sign-out return to them. */
+export const SIGN_IN_PAGES = ["/submit", "/review"] as const;
+export type SignInPage = (typeof SIGN_IN_PAGES)[number];
+
+/** The page a ?return= value names, or /submit. Only listed pages, so it can't redirect elsewhere. */
+export const signInPage = (value: string | null | undefined): SignInPage =>
+  SIGN_IN_PAGES.find((page) => page === value) ?? "/submit";
+
 /** Website sign-in: the Auth0 "website" application (a Regular Web Application). */
 export function websiteAuthConfig(origin: string) {
   const missing = WEBSITE_VARIABLES.filter((name) => !process.env[name]?.trim());
@@ -58,8 +66,8 @@ export function websiteAuthConfig(origin: string) {
     clientSecret: process.env.AUTH0_CLIENT_SECRET!.trim(),
     /** Must be in the application's Allowed Callback URLs. */
     callbackUrl: `${origin}/auth/callback`,
-    /** Must be in the application's Allowed Logout URLs. */
-    signedOutUrl: `${origin}/submit`,
+    /** Where sign-out returns to. Each must be in the application's Allowed Logout URLs. */
+    signedOutUrl: (page: SignInPage) => `${origin}${page}`,
   };
 }
 

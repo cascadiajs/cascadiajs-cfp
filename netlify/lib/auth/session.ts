@@ -1,10 +1,11 @@
 import { jwtVerify, SignJWT } from "jose";
+import { signInPage, type SignInPage } from "./config.js";
 
-// Website sessions. After a presenter signs in with Auth0 (netlify/functions/auth.ts), the
+// Website sessions. After someone signs in with Auth0 (netlify/functions/auth.ts), the
 // site keeps their verified email in a signed, HttpOnly cookie, so the page's own requests
-// (netlify/functions/api.ts) act for them the way an access token does for an agent.
-// A second short-lived cookie carries the sign-in's state, nonce and PKCE verifier from
-// /auth/login to /auth/callback.
+// (netlify/functions/api.ts, review.ts) act for them the way an access token does for an
+// agent. A second short-lived cookie carries the sign-in's state, nonce, PKCE verifier and
+// the page to return to from /auth/login to /auth/callback.
 
 const SESSION_COOKIE = "cfp_session";
 const SESSION_DAYS = 7;
@@ -58,7 +59,7 @@ export async function sessionCookie(request: Request, email: string) {
 
 export const clearSessionCookie = (request: Request) => cookie(request, SESSION_COOKIE, "", { path: "/", maxAge: 0 });
 
-export type SignIn = { state: string; nonce: string; verifier: string };
+export type SignIn = { state: string; nonce: string; verifier: string; returnTo: SignInPage };
 
 export async function signInCookie(request: Request, signIn: SignIn) {
   const token = await sign(signIn, "cfp-sign-in", `${SIGN_IN_MINUTES}m`);
@@ -70,9 +71,9 @@ export async function pendingSignIn(request: Request): Promise<SignIn | undefine
   const token = readCookie(request, SIGN_IN_COOKIE);
   if (!token) return undefined;
   try {
-    const { state, nonce, verifier } = await verify(token, "cfp-sign-in");
+    const { state, nonce, verifier, returnTo } = await verify(token, "cfp-sign-in");
     if (typeof state !== "string" || typeof nonce !== "string" || typeof verifier !== "string") return undefined;
-    return { state, nonce, verifier };
+    return { state, nonce, verifier, returnTo: signInPage(typeof returnTo === "string" ? returnTo : undefined) };
   } catch {
     return undefined;
   }

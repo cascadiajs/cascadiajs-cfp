@@ -14,6 +14,7 @@ The site is hosted on Netlify:
 | `/.well-known/oauth-protected-resource[/mcp]` | Tells agents to sign in with Auth0, `netlify/functions/well-known.ts` |
 | `/record` | Fallback [video recorder](#video-recording) page, `netlify/functions/record.ts` |
 | `/submit` | [Website submissions](#website-submissions): the same forms as the agent, for presenters who'd rather not use one, `netlify/functions/submit.ts` |
+| `/review` | [Review](#review): submissions for invited reviewers, and the reviewer list for admins, `netlify/functions/review.ts` |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | [Website sign-in](#website-sign-in) with Auth0, `netlify/functions/auth.ts` |
 | `/api/profile`, `/api/submissions` | The endpoints `/submit` saves profiles and talks through (session cookie), `netlify/functions/api.ts` |
 | `/api/recordings/*` | The two endpoints the recorder on `/record` and `/submit` uploads through (recording token), `netlify/functions/api.ts` |
@@ -33,12 +34,12 @@ Presenters are keyed by that email, not by their Auth0 user ID. Signing in prove
 
 ### Website sign-in
 
-`/submit` signs presenters in with a second Auth0 application in the same tenant, the "website" application (a Regular Web Application), using the authorization code flow with PKCE. Presenters see the same passwordless email sign-in as in agents.
+`/submit` (presenters) and `/review` (reviewers) sign in with a second Auth0 application in the same tenant, the "website" application (a Regular Web Application), using the authorization code flow with PKCE. Everyone sees the same passwordless email sign-in as in agents.
 
-1. **Sign in** on `/submit` goes to `/auth/login`, which stores the sign-in's state, nonce and PKCE verifier in a signed, 10-minute cookie and redirects to Auth0.
+1. **Sign in** on `/submit` goes to `/auth/login` (`/review` adds `?return=/review`), which stores the sign-in's state, nonce, PKCE verifier and the page to return to in a signed, 10-minute cookie and redirects to Auth0. Only `/submit` and `/review` are accepted as return pages.
 2. Auth0 sends the presenter back to `/auth/callback`. The server checks the state, exchanges the code for an ID token (with the application's client secret) and verifies it (`verifyIdToken` in `netlify/lib/auth/tokens.ts`): RS256 signature, issuer, the application as audience, the nonce, and a verified `email`.
-3. It sets `cfp_session`, a signed (HS256 with `SESSION_SECRET`), HttpOnly, `SameSite=Lax` cookie holding that email for 7 days (`netlify/lib/auth/session.ts`).
-4. The page's API requests act for that email. They also check the `Origin` header and require JSON, so other sites can't make them. **Sign out** (`POST /auth/logout`) clears the cookie and ends the Auth0 session.
+3. It sets `cfp_session`, a signed (HS256 with `SESSION_SECRET`), HttpOnly, `SameSite=Lax` cookie holding that email for 7 days (`netlify/lib/auth/session.ts`), and returns to the page. Only `/submit` sign-ins create a presenter profile.
+4. The page's API requests act for that email. They also check the `Origin` header and require JSON (`/review`'s forms: a form body), so other sites can't make them. **Sign out** (`POST /auth/logout`, with `?return=/review` from `/review`) clears the cookie, ends the Auth0 session and returns to the page.
 
 The website never sees or stores an access token: it only needs the presenter's verified email. Without `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` and `SESSION_SECRET`, `/submit` says website submissions aren't available, and agents are unaffected.
 
@@ -51,7 +52,7 @@ Follow [AUTH0.md](AUTH0.md). It has step-by-step instructions, with the exact va
 - a domain-level passwordless email connection, with the Identifier First authentication profile;
 - the post-login Action from [`auth0/post-login-email-claim.js`](auth0/post-login-email-claim.js).
 
-For website sign-in, the tenant also needs a Regular Web Application with `/auth/callback` as its callback URL and the email connection enabled (AUTH0.md, step 9).
+For website sign-in, the tenant also needs a Regular Web Application with `/auth/callback` as its callback URL, `/submit` and `/review` as logout URLs, and the email connection enabled (AUTH0.md, step 9).
 
 Agents read the server's `instructions` and tool descriptions when they connect (see `instructions` in `netlify/functions/mcp.ts`), so reconnect after changing them.
 
@@ -128,6 +129,8 @@ There's no scheduled job: a job that queried the database every few minutes kept
 | `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET` | Yes | A Mux access token with Mux Video read and write permissions (including deletion), for recorded videos |
 | `MUX_WEBHOOK_SECRET` | Yes, in production | The signing secret of the Mux webhook that points at `/webhooks/mux` (see [Mux webhook setup](#upload-abuse-protection)) |
 | `VIDEO_UPLOADS_DAILY_LIMIT`, `VIDEO_UPLOADS_TOTAL_LIMIT` | No | Global upload allocation caps; defaults 100 per UTC day and 1,000 total. Zero disables new allocations. |
+| `RESEND_API_KEY` | Yes, in production | A [Resend](https://resend.com) API key with sending access, for [reviewer invitations](#review). Without it, invitations are saved but not emailed, and the admin is told to send the link themselves |
+| `RESEND_FROM` | No | The invitation sender, on a domain verified in Resend. Defaults to `CascadiaJS <cfp@cascadiajs.com>` |
 | `POSTHOG_KEY` | No | PostHog project API key (US Cloud) for [analytics](#analytics). Without it, nothing is sent. Set it for the Production context only, so previews and local development don't send events. |
 
 For local development, copy `.env.example` to `.env.local` (git ignores it) and fill in the values; `netlify dev` loads it at startup. Without `AUTH0_DOMAIN`, `/mcp` answers with a configuration error. Without the three website variables, `/submit` says website submissions aren't available.
@@ -171,7 +174,7 @@ npm run dev
 
 The first time, apply the migrations to the local database (see [Database](#database)): `npx netlify database migrations apply`.
 
-Netlify Dev serves the site at `http://localhost:8888/`, the website form at `http://localhost:8888/submit` and the MCP endpoint at `http://localhost:8888/mcp`, whose tokens must be issued for the `http://localhost:8888/mcp` API in Auth0 (see [Auth0 setup](#auth0-setup)). Connect an MCP client or the MCP Inspector; it will walk through sign-in. In development, the server also logs one `[mcp]` line per MCP request, with the signed-in email.
+Netlify Dev serves the site at `http://localhost:8888/`, the website form at `http://localhost:8888/submit`, the review page at `http://localhost:8888/review` and the MCP endpoint at `http://localhost:8888/mcp`, whose tokens must be issued for the `http://localhost:8888/mcp` API in Auth0 (see [Auth0 setup](#auth0-setup)). Connect an MCP client or the MCP Inspector; it will walk through sign-in. In development, the server also logs one `[mcp]` line per MCP request, with the signed-in email.
 
 ## Deploy
 
@@ -219,6 +222,18 @@ A form change made in one of these modules shows up both in agents and on the we
 
 **Recording later.** The server keeps only a hash of each recording token, so `/submit` remembers the `/record` link of each talk that still needs a video in the browser's `localStorage`, and shows it as **Record it now** in the list until the video is attached or the link expires.
 
+## Review
+
+`/review` is for the people who review talks. Access is an allow-list, the `public.reviewers` table: after [website sign-in](#website-sign-in), the signed-in email must be in it, or the page says "Not authorized". The check runs on every request, so removing someone ends their access at their next page load, even though their session cookie is still valid. Migration `0002_reviewers.sql` creates the table with one admin, `carter@cascadiajs.com`.
+
+- **Everyone on the list** sees every submission, newest first: title, description, topics, status, submitted date and video. The list is blind: `allSubmissions` in `netlify/lib/cfp.ts` reads no presenter details, so names, emails and locations never reach the page. Nothing on the page changes a submission; set `status` in the database.
+- **Admins** also see the reviewer list (name, email, role, and whether they've accepted), and can:
+  - **Invite a reviewer** with a name and email (`POST /review/invite`). This adds them with the `reviewer` role and emails them a link to `/review` through Resend (`netlify/lib/email.ts`). If the email can't be sent, the invitation is taken back and the admin sees an error, so they can try again. Admins are added in the database (`role = 'admin'`).
+  - **Remove** anyone but themselves (`POST /review/remove`), after a confirmation.
+- **Accepting** an invitation is signing in: the first time an invited email opens `/review` signed in, `accepted` is set.
+
+The page and its forms are server-rendered (`netlify/lib/review-page.ts`) and the allow-list lives in `netlify/lib/reviewers.ts`. Emails are stored lowercased, so matching ignores case.
+
 ## Database
 
 This project is linked to the `cascadiajs-cfp` Netlify site, which has a managed PostgreSQL database. Browse and edit its rows in the [Netlify database dashboard](https://app.netlify.com/projects/cascadiajs-cfp/database).
@@ -246,3 +261,5 @@ Migration `0001_init.sql` creates the profile and submission tables, based on th
   - Deleting a profile deletes its submissions.
 
 Netlify applies this initial migration on the first deploy. If a local development database already applied an earlier version, editing the migration does not update that database: recreate a disposable local database before applying the consolidated schema.
+
+Migration `0002_reviewers.sql` creates `public.reviewers`, the allow-list for [`/review`](#review): `email` (lowercased, the primary key), `name`, `role` (`admin` or `reviewer`) and `accepted` (when they first signed in, null until then).

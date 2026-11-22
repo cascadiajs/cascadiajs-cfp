@@ -19,7 +19,7 @@ Do every step once for each tenant, using the values in that tenant's column. Au
 | Action claim name | `https://cfp.cascadiajs.com/email` | `https://cfp.cascadiajs.com/email` |
 | Website application name | `CascadiaJS CFP website (dev)` | `CascadiaJS CFP website` |
 | Website callback URL | `http://localhost:8888/auth/callback` | `https://cfp.cascadiajs.com/auth/callback` |
-| Website logout URL | `http://localhost:8888/submit` | `https://cfp.cascadiajs.com/submit` |
+| Website logout URLs | `http://localhost:8888/submit`, `http://localhost:8888/review` | `https://cfp.cascadiajs.com/submit`, `https://cfp.cascadiajs.com/review` |
 | Where `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` and `SESSION_SECRET` go | `.env.local` in this project | Netlify environment variables for the `cascadiajs-cfp` site |
 | Dynamic Client Registration | On, for testing with agents and tools that lack CIMD support | Off unless an agent you need requires it |
 
@@ -143,7 +143,7 @@ Same code and claim name in both tenants.
 
 ## 9. Create the website application
 
-`/submit` signs presenters in with its own application, separate from the agents. It's a first-party app that keeps a client secret on the server, so it uses the standard authorization code flow and needs no API or third-party access.
+`/submit` (presenters) and `/review` (reviewers) sign in with their own application, separate from the agents. It's a first-party app that keeps a client secret on the server, so it uses the standard authorization code flow and needs no API or third-party access.
 
 1. Go to **Applications → Applications → Create Application**.
 2. Enter the name from the table, choose **Regular Web Applications**, and click **Create**. Skip the quickstart.
@@ -152,7 +152,7 @@ Same code and claim name in both tenants.
    | Field | Development | Production |
    | --- | --- | --- |
    | Allowed Callback URLs | `http://localhost:8888/auth/callback` | `https://cfp.cascadiajs.com/auth/callback` |
-   | Allowed Logout URLs | `http://localhost:8888/submit` | `https://cfp.cascadiajs.com/submit` |
+   | Allowed Logout URLs | `http://localhost:8888/submit, http://localhost:8888/review` | `https://cfp.cascadiajs.com/submit, https://cfp.cascadiajs.com/review` |
    | Allowed Web Origins | leave empty | leave empty |
 
    Under **Credentials**, keep **Authentication Method** as **Client Secret (Post)**. Under **Advanced Settings → Grant Types**, keep **Authorization Code** on. Click **Save**.
@@ -221,6 +221,8 @@ Agents that run in the cloud, like Claude on the web, may not be able to reach `
 
 **Website:** open `/submit` (`http://localhost:8888/submit` or `https://cfp.cascadiajs.com/submit`), click **Sign in with email**, and enter your email and the code. You should come back signed in, with the profile form (or, if you already completed it through an agent with the same email, the talk form).
 
+**Review:** open `/review` and sign in the same way with an email in the `reviewers` table (`carter@cascadiajs.com` to start). You should see the reviewer list and the submissions. Any other email sees "Not authorized".
+
 ## Troubleshooting
 
 | What you see | Likely cause | Fix |
@@ -235,4 +237,5 @@ Agents that run in the cloud, like Claude on the web, may not be able to reach `
 | Auth0 says the callback URL isn't allowed | The website application's Allowed Callback URLs don't include this site's `/auth/callback` | Step 9 |
 | `/submit` says "Signing in didn't work"; the server log says the token exchange failed | Wrong `AUTH0_CLIENT_SECRET`, or the application isn't a Regular Web Application using Client Secret (Post) | Step 9 |
 | `/submit` says "Signing in didn't work"; the server log says the ID token has no verified email | The email connection isn't enabled for the website application, so another connection was used | Step 9.4 |
+| Auth0 says the logout URL isn't allowed after **Sign out** on `/review` | The website application's Allowed Logout URLs don't include `/review` | Step 9 |
 | Works locally but not in production | The production tenant is missing a step, or Netlify's `AUTH0_DOMAIN` points at the development tenant | Repeat the steps for production; check step 11 |

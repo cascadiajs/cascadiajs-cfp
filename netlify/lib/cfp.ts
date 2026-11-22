@@ -153,45 +153,67 @@ export type SubmissionStatus = (typeof SUBMISSION_STATUSES)[number];
 
 type VideoStatus = "attached" | "processing" | "awaiting_recording" | "failed" | "missing";
 
+type SubmissionRow = {
+  id: string | number;
+  submitted_at: string | Date;
+  talk_title: string;
+  talk_description: string;
+  topics: string;
+  status: SubmissionStatus;
+  video_submission_url: string | null;
+  video_error: string | null;
+  uploading: boolean;
+  recording_open: boolean;
+  upload_stale: boolean;
+};
+
+// Both queries below select the SubmissionRow columns. Upload links last 15 minutes and
+// Mux reports no timeout, so an upload with no result an hour after it started was abandoned.
+
+function submissionResult(row: SubmissionRow) {
+  const video_status: VideoStatus = row.video_submission_url ? "attached"
+    : row.video_error ? "failed"
+    : row.recording_open && !(row.uploading && row.upload_stale) ? (row.uploading ? "processing" : "awaiting_recording")
+    : "missing";
+  return {
+    submission_id: String(row.id),
+    submitted_at: new Date(row.submitted_at).toISOString(),
+    talk_title: row.talk_title,
+    talk_description: row.talk_description,
+    topics: row.topics,
+    status: row.status,
+    video_status,
+    ...(row.video_submission_url ? { video_url: row.video_submission_url } : {}),
+    ...(row.video_error ? { video_error: row.video_error } : {}),
+  };
+}
+
+export type SubmissionResult = ReturnType<typeof submissionResult>;
+
 /** The signed-in presenter's talk proposals, newest first, with where each video stands. */
 export async function listSubmissions(email: string) {
   const rows = (await getDatabase().sql`
     SELECT s.id, s.submitted_at, s.talk_title, s.talk_description, s.topics, s.status, s.video_submission_url,
       s.video_error, s.mux_upload_id IS NOT NULL AS uploading, coalesce(s.recording_expires_at > now(), false) AS recording_open,
-      -- Upload links last 15 minutes and Mux reports no timeout, so an upload with no result
-      -- an hour after it started was abandoned.
       coalesce(s.upload_reserved_at < now() - interval '1 hour', false) AS upload_stale
     FROM public.submissions s JOIN public.profiles p ON p.id = s.profile_id
     WHERE lower(p.email_address) = lower(${email})
     ORDER BY s.submitted_at DESC, s.id DESC
-  `) as {
-    id: string | number;
-    submitted_at: string | Date;
-    talk_title: string;
-    talk_description: string;
-    topics: string;
-    status: SubmissionStatus;
-    video_submission_url: string | null;
-    video_error: string | null;
-    uploading: boolean;
-    recording_open: boolean;
-    upload_stale: boolean;
-  }[];
-  return rows.map((row) => {
-    const video_status: VideoStatus = row.video_submission_url ? "attached"
-      : row.video_error ? "failed"
-      : row.recording_open && !(row.uploading && row.upload_stale) ? (row.uploading ? "processing" : "awaiting_recording")
-      : "missing";
-    return {
-      submission_id: String(row.id),
-      submitted_at: new Date(row.submitted_at).toISOString(),
-      talk_title: row.talk_title,
-      talk_description: row.talk_description,
-      topics: row.topics,
-      status: row.status,
-      video_status,
-      ...(row.video_submission_url ? { video_url: row.video_submission_url } : {}),
-      ...(row.video_error ? { video_error: row.video_error } : {}),
-    };
-  });
+  `) as SubmissionRow[];
+  return rows.map(submissionResult);
+}
+
+/**
+ * Every talk proposal, newest first, for /review. Blind: nothing about the presenter
+ * (no profile fields) is selected, so it can't reach reviewers.
+ */
+export async function allSubmissions() {
+  const rows = (await getDatabase().sql`
+    SELECT s.id, s.submitted_at, s.talk_title, s.talk_description, s.topics, s.status, s.video_submission_url,
+      s.video_error, s.mux_upload_id IS NOT NULL AS uploading, coalesce(s.recording_expires_at > now(), false) AS recording_open,
+      coalesce(s.upload_reserved_at < now() - interval '1 hour', false) AS upload_stale
+    FROM public.submissions s
+    ORDER BY s.submitted_at DESC, s.id DESC
+  `) as SubmissionRow[];
+  return rows.map(submissionResult);
 }
