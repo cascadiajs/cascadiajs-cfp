@@ -1,7 +1,7 @@
 import type { Config } from "@netlify/functions";
 import { websiteSignInConfigured } from "../lib/auth/config.js";
 import { sameOrigin, sessionEmail } from "../lib/auth/session.js";
-import { allSubmissions, CfpError } from "../lib/cfp.js";
+import { allSubmissions, CfpError, deleteSubmission, type SubmissionResult } from "../lib/cfp.js";
 import { inviteReviewer, inviteSchema, listReviewers, removeReviewer, reviewerForEmail, type Reviewer } from "../lib/reviewers.js";
 import { notAuthorizedPage, reviewPage, signedOutPage, unavailablePage, type AdminState } from "../lib/review-page.js";
 
@@ -12,6 +12,7 @@ import { notAuthorizedPage, reviewPage, signedOutPage, unavailablePage, type Adm
 //   GET  /review         the page
 //   POST /review/invite  admins: add a reviewer and email them an invitation (form: name, email)
 //   POST /review/remove  admins: take someone off the list, ending their access (form: email)
+//   POST /review/delete  admins: delete a submission and its video (form: submission_id)
 
 function redirect(location: string) {
   return new Response(null, { status: 303, headers: { Location: location, "Cache-Control": "no-store" } });
@@ -19,33 +20,43 @@ function redirect(location: string) {
 
 type Message = { kind: "success" | "error" | ""; text: string };
 
-async function showPage(me: Reviewer, options: { status?: number; message?: Message; invite?: AdminState["invite"] } = {}) {
+type PageOptions = {
+  status?: number;
+  message?: Message;
+  invite?: AdminState["invite"];
+  /** The page's URL, for the outcome of the change that redirected to it. */
+  url?: URL;
+};
+
+async function showPage(me: Reviewer, options: PageOptions = {}) {
   const [submissions, reviewers] = await Promise.all([allSubmissions(), me.role === "admin" ? listReviewers() : undefined]);
   return reviewPage({
     status: options.status,
     me,
     submissions,
     admin: reviewers ? { reviewers, invite: options.invite } : undefined,
-    message: options.message,
+    message: options.message ?? (reviewers && options.url ? outcome(options.url, reviewers, submissions) : undefined),
   });
 }
 
 /**
- * The outcome of the last invite or removal, from the query string it redirected to. Only
- * shown when the list agrees, so a crafted link can't make the page claim something false.
+ * The outcome of the last admin change, from the query string it redirected to. Only shown
+ * when the lists agree, so a crafted link can't make the page claim something false.
  */
-async function outcome(url: URL, me: Reviewer): Promise<Message | undefined> {
-  if (me.role !== "admin") return undefined;
+function outcome(url: URL, reviewers: Reviewer[], submissions: SubmissionResult[]): Message | undefined {
   const invited = url.searchParams.get("invited");
   const removed = url.searchParams.get("removed");
-  if (!invited && !removed) return undefined;
-  const emails = new Set((await listReviewers()).map((person) => person.email));
+  const deleted = url.searchParams.get("deleted");
+  const emails = new Set(reviewers.map((person) => person.email));
   if (invited && emails.has(invited)) {
     return url.searchParams.get("emailed") === "0"
       ? { kind: "", text: `${invited} was added, but no email was sent because email isn't set up (RESEND_API_KEY). Send them the link to this page yourself.` }
       : { kind: "success", text: `Invitation sent to ${invited}.` };
   }
   if (removed && !emails.has(removed)) return { kind: "success", text: `${removed} was removed and can no longer open this page.` };
+  if (deleted && /^\d+$/.test(deleted) && !submissions.some((s) => s.submission_id === deleted)) {
+    return { kind: "success", text: `Submission #${deleted} was deleted.` };
+  }
   return undefined;
 }
 
@@ -53,7 +64,7 @@ async function admin(request: Request) {
   if (!sameOrigin(request)) throw new CfpError(403, "Cross-site requests aren't allowed.");
   const email = await sessionEmail(request);
   const me = email ? await reviewerForEmail(email) : undefined;
-  if (!me || me.role !== "admin") throw new CfpError(403, "Only admins can change the reviewer list.");
+  if (!me || me.role !== "admin") throw new CfpError(403, "Only admins can do that.");
   return me;
 }
 
@@ -94,13 +105,25 @@ async function remove(request: Request) {
   }
 }
 
+async function deleteTalk(request: Request) {
+  const me = await admin(request);
+  const id = ((await form(request)).get("submission_id") ?? "").trim();
+  try {
+    await deleteSubmission(id);
+    return redirect(`/review?${new URLSearchParams({ deleted: id })}`);
+  } catch (error) {
+    if (!(error instanceof CfpError)) throw error;
+    return showPage(me, { status: error.status, message: { kind: "error", text: error.message } });
+  }
+}
+
 async function view(request: Request, url: URL) {
   if (!websiteSignInConfigured()) return unavailablePage();
   const email = await sessionEmail(request);
   if (!email) return signedOutPage(url.searchParams.get("error"));
   const me = await reviewerForEmail(email);
   if (!me) return notAuthorizedPage(email);
-  return showPage(me, { message: await outcome(url, me) });
+  return showPage(me, { url });
 }
 
 export default async (request: Request) => {
@@ -114,6 +137,8 @@ export default async (request: Request) => {
         return await invite(request, url);
       case "POST /review/remove":
         return await remove(request);
+      case "POST /review/delete":
+        return await deleteTalk(request);
       default:
         return new Response("Not found", { status: 404 });
     }
@@ -124,4 +149,4 @@ export default async (request: Request) => {
   }
 };
 
-export const config: Config = { path: ["/review", "/review/invite", "/review/remove"] };
+export const config: Config = { path: ["/review", "/review/invite", "/review/remove", "/review/delete"] };

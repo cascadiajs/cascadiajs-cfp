@@ -49,6 +49,7 @@ export function createDirectUpload(passthrough: string) {
 }
 
 export const getUpload = (id: string) => mux<MuxUpload>("GET", `/video/v1/uploads/${encodeURIComponent(id)}`);
+export const findUpload = (id: string) => mux<MuxUpload | null>("GET", `/video/v1/uploads/${encodeURIComponent(id)}`, undefined, true);
 export const getAsset = (id: string) => mux<MuxAsset | null>("GET", `/video/v1/assets/${encodeURIComponent(id)}`, undefined, true);
 export const deleteAsset = (id: string) => mux<void>("DELETE", `/video/v1/assets/${encodeURIComponent(id)}`);
 export const cancelUpload = (id: string) => mux<MuxUpload>("PUT", `/video/v1/uploads/${encodeURIComponent(id)}/cancel`);

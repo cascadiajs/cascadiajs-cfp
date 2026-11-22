@@ -3,6 +3,7 @@ import { getDatabase } from "@netlify/database";
 import { z } from "zod";
 import { track } from "./analytics.js";
 import { CfpError } from "./errors.js";
+import { discardRecording } from "./recordings.js";
 export { attachVideo, createVideoUpload } from "./recordings.js";
 
 export { CfpError };
@@ -216,4 +217,15 @@ export async function allSubmissions() {
     ORDER BY s.submitted_at DESC, s.id DESC
   `) as SubmissionRow[];
   return rows.map(submissionResult);
+}
+
+/** Deletes a talk proposal for good, along with its recorded video on Mux if it has one. */
+export async function deleteSubmission(id: string) {
+  if (!/^[1-9]\d{0,17}$/.test(id)) throw new CfpError(400, "Choose a submission to delete.");
+  const db = getDatabase();
+  const rows = (await db.sql`SELECT mux_upload_id FROM public.submissions WHERE id = ${id}`) as { mux_upload_id: string | null }[];
+  if (!rows[0]) throw new CfpError(409, `Submission #${id} doesn't exist. It may have been deleted already.`);
+  // The video goes first: once the row is gone, nothing records which Mux upload was this talk's.
+  if (rows[0].mux_upload_id) await discardRecording(rows[0].mux_upload_id);
+  await db.sql`DELETE FROM public.submissions WHERE id = ${id}`;
 }

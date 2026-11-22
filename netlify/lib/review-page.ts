@@ -1,13 +1,17 @@
 // The /review page (netlify/functions/review.ts): CFP submissions for reviewers, plus the
 // reviewer list for admins. Rendered on the server; its forms post to /review/* and come
-// back to the page, so it needs no script beyond a confirmation before removing someone.
+// back to the page. Its scripts only draw the submissions chart and confirm deletions.
 
 import { APP_STYLES, FORM_STYLES } from "./app.js";
 import type { SubmissionResult, SubmissionStatus } from "./cfp.js";
-import { escapeHtml, sitePage } from "./page.js";
+import { escapeHtml, scriptJson, sitePage } from "./page.js";
 import type { Reviewer } from "./reviewers.js";
 
 const TITLE = "Review talks";
+const TIME_ZONE = "America/Los_Angeles";
+
+// Pinned with Subresource Integrity, so a changed file on the CDN is refused rather than run.
+const CHART_JS = `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js" integrity="sha384-Emf5ZVIUiarAdhkgtqK+5/Z5qIvM6QoVrS+qAVtfyZVuD5lIHrac0me485+Antp0" crossorigin="anonymous" defer></script>`;
 
 const STYLES = `
   .review .account { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; }
@@ -15,9 +19,11 @@ const STYLES = `
   .mcp-app form.inline { display: inline; margin: 0; }
   .review button.small { font-size: 15px; padding: 6px 10px; }
   .review-section { margin: 0 0 40px; }
+  .review-section .chart { position: relative; height: 240px; margin: 0 0 24px; padding: 12px; border: 2px solid var(--gray); border-radius: 4px; background: #fff; }
   .review-section ul.cards { list-style: none; padding: 0; display: grid; gap: 12px; }
   .review-section ul.cards li { padding: 12px 16px; border: 2px solid var(--gray); border-radius: 4px; background: #fff; }
   .review-section ul.cards li p { margin: 4px 0 0; }
+  .review-section .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .review-section .talk-title { font-weight: 500; color: var(--navy); }
   .review-section table { width: 100%; border-collapse: collapse; margin: 0 0 20px; background: #fff; }
   .review-section th, .review-section td { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--gray); vertical-align: middle; }
@@ -44,7 +50,7 @@ const VIDEO: Record<SubmissionResult["video_status"], string> = {
   missing: "No video.",
 };
 
-const date = (iso: string) => new Date(iso).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "America/Los_Angeles" });
+const date = (iso: string) => new Date(iso).toLocaleDateString("en-US", { dateStyle: "medium", timeZone: TIME_ZONE });
 
 const signOutForm = `<form method="post" action="/auth/logout?return=/review" class="inline"><button type="submit" class="secondary small">Sign out</button></form>`;
 
@@ -79,12 +85,103 @@ export function notAuthorizedPage(email: string) {
 </div>`);
 }
 
-function submissionItem(s: SubmissionResult) {
+const DAY_MS = 86_400_000;
+/** The calendar day an instant falls on in Seattle, as YYYY-MM-DD. */
+const dayOf = (instant: string | Date) => new Date(instant).toLocaleDateString("en-CA", { timeZone: TIME_ZONE });
+/** Formats a YYYY-MM-DD day; it's parsed as UTC midnight, so it's formatted in UTC. */
+const formatDay = (day: number, options: Intl.DateTimeFormatOptions) =>
+  new Date(day).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
+
+/** Talks submitted on each day from the first submission through today, including days with none. */
+function submissionsPerDay(submissions: SubmissionResult[]) {
+  const counts = new Map<string, number>();
+  for (const s of submissions) {
+    const day = dayOf(s.submitted_at);
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  }
+  const days = [...counts.keys(), dayOf(new Date())].sort();
+  const labels: string[] = [];
+  const titles: string[] = [];
+  const values: number[] = [];
+  for (let day = Date.parse(days[0]); day <= Date.parse(days[days.length - 1]); day += DAY_MS) {
+    labels.push(formatDay(day, { month: "short", day: "numeric" }));
+    titles.push(formatDay(day, { dateStyle: "medium" }));
+    values.push(counts.get(new Date(day).toISOString().slice(0, 10)) ?? 0);
+  }
+  return { labels, titles, values };
+}
+
+function chart(submissions: SubmissionResult[]) {
+  const data = submissionsPerDay(submissions);
+  const busiest = data.values.indexOf(Math.max(...data.values));
+  const talks = (n: number) => (n === 1 ? "1 talk" : `${n} talks`);
+  const summary = `Talks submitted per day, ${data.titles[0]} to ${data.titles[data.titles.length - 1]}. ` +
+    `The busiest day was ${data.titles[busiest]}, with ${talks(data.values[busiest])}.`;
+  return `<div class="chart"><canvas id="submissions-chart" role="img" aria-label="${escapeHtml(summary)}"></canvas></div>
+  <script type="application/json" id="submissions-per-day">${scriptJson(data)}</script>`;
+}
+
+// Runs after Chart.js, which is deferred. If Chart.js can't load, the chart's summary is shown as text.
+const CHART_SCRIPT = `
+document.addEventListener("DOMContentLoaded", () => {
+  const canvas = document.getElementById("submissions-chart");
+  if (!canvas) return;
+  if (!window.Chart) {
+    const fallback = document.createElement("p");
+    fallback.className = "muted";
+    fallback.textContent = canvas.getAttribute("aria-label");
+    canvas.parentElement.replaceWith(fallback);
+    return;
+  }
+  const data = JSON.parse(document.getElementById("submissions-per-day").textContent);
+  Chart.defaults.font.family = "freight-sans-pro, sans-serif";
+  Chart.defaults.font.size = 14;
+  Chart.defaults.color = "#112378";
+  new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: data.labels,
+      datasets: [{
+        label: "Talks submitted",
+        data: data.values,
+        borderColor: "#0033ff",
+        backgroundColor: "rgba(0, 51, 255, 0.1)",
+        fill: true,
+        pointRadius: data.values.length > 60 ? 0 : 3,
+      }],
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { title: (items) => data.titles[items[0].dataIndex] } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 12 } },
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+});
+`;
+
+function deleteForm(s: SubmissionResult) {
+  return `<form method="post" action="/review/delete" class="inline" data-confirm="Delete &quot;${escapeHtml(s.talk_title)}&quot; (#${escapeHtml(s.submission_id)})? The talk and its video are deleted for good, and the presenter isn't told.">
+        <input type="hidden" name="submission_id" value="${escapeHtml(s.submission_id)}">
+        <button type="submit" class="secondary small">Delete</button>
+      </form>`;
+}
+
+function submissionItem(s: SubmissionResult, admin: boolean) {
   const video = s.video_url && /^https?:\/\//i.test(s.video_url)
     ? `${VIDEO[s.video_status]} <a href="${escapeHtml(s.video_url)}" target="_blank" rel="noopener">Watch it</a>`
     : escapeHtml(VIDEO[s.video_status]);
   return `<li>
-    <p class="talk-title">${escapeHtml(s.talk_title)}</p>
+    <div class="card-head">
+      <p class="talk-title">${escapeHtml(s.talk_title)}</p>
+      ${admin ? deleteForm(s) : ""}
+    </div>
     <p class="muted">#${escapeHtml(s.submission_id)} · Submitted ${escapeHtml(date(s.submitted_at))} · ${escapeHtml(STATUS[s.status] ?? s.status)}</p>
     <p>${escapeHtml(s.talk_description)}</p>
     <p class="muted">Topics: ${escapeHtml(s.topics)}</p>
@@ -92,12 +189,13 @@ function submissionItem(s: SubmissionResult) {
   </li>`;
 }
 
-function submissionsSection(submissions: SubmissionResult[]) {
+function submissionsSection(submissions: SubmissionResult[], admin: boolean) {
   const count = submissions.length === 1 ? "1 talk" : `${submissions.length} talks`;
   return `<section class="mcp-app review-section">
   <h2>Submissions</h2>
+  ${submissions.length ? chart(submissions) : ""}
   <p class="muted">${count}, newest first. Presenter details are hidden so talks are reviewed on their own.</p>
-  ${submissions.length ? `<ul class="cards">${submissions.map(submissionItem).join("")}</ul>` : `<p class="muted">None yet.</p>`}
+  ${submissions.length ? `<ul class="cards">${submissions.map((s) => submissionItem(s, admin)).join("")}</ul>` : `<p class="muted">None yet.</p>`}
 </section>`;
 }
 
@@ -157,7 +255,7 @@ export function reviewPage(options: {
   admin?: AdminState;
   message?: { kind: "success" | "error" | ""; text: string };
 }) {
-  const { me } = options;
+  const { me, submissions, admin } = options;
   const body = `<div class="mcp-app review">
   <div class="account">
     <p>Signed in as <strong>${escapeHtml(me.name)}</strong> (${escapeHtml(me.email)}), ${me.role === "admin" ? "admin" : "reviewer"}</p>
@@ -165,14 +263,15 @@ export function reviewPage(options: {
   </div>
   ${options.message ? notice(options.message.kind, options.message.text) : ""}
 </div>
-${options.admin ? reviewersSection(me, options.admin) : ""}
-${submissionsSection(options.submissions)}`;
+${admin ? reviewersSection(me, admin) : ""}
+${submissionsSection(submissions, Boolean(admin))}`;
+  const script = (submissions.length ? CHART_SCRIPT : "") + (admin ? CONFIRM_SCRIPT : "");
   return sitePage({
     status: options.status ?? 200,
     title: TITLE,
-    head,
+    head: submissions.length ? head + CHART_JS : head,
     body,
-    script: options.admin ? CONFIRM_SCRIPT : undefined,
+    script: script || undefined,
     headers: { "Cache-Control": "no-store" },
   });
 }

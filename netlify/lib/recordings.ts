@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { getDatabase } from "@netlify/database";
 import { track } from "./analytics.js";
 import { CfpError } from "./errors.js";
-import { cancelUpload, createDirectUpload, deleteAsset, getAsset, getUpload, playerUrl, validVideo } from "./mux.js";
+import { cancelUpload, createDirectUpload, deleteAsset, findUpload, getAsset, getUpload, playerUrl, validVideo } from "./mux.js";
 
 type Recording = {
   id: string;
@@ -177,6 +177,13 @@ export async function processRecording(id: string): Promise<"done" | "retry"> {
   } finally {
     await db.sql`UPDATE public.submissions SET upload_check_until = NULL WHERE id = ${id}`;
   }
+}
+
+/** Deletes a recorded video from Mux, or cancels its upload if nothing has been uploaded yet. */
+export async function discardRecording(uploadId: string) {
+  const upload = await findUpload(uploadId);
+  if (upload?.asset_id) await deleteAsset(upload.asset_id);
+  else if (upload?.status === "waiting") await cancelUpload(upload.id);
 }
 
 /** The submission a Mux upload belongs to. */
