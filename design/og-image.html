@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Source of public/images/og-image.jpg, the 1200x630 social sharing image. The
+     Typekit fonts only load from an allowed host, so serve the repo root locally and
+     render it with headless Chrome:
+       python3 -m http.server 8899
+       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+         --force-device-scale-factor=1 --window-size=1200,630 --virtual-time-budget=8000 \
+         --screenshot=og.png http://localhost:8899/design/og-image.html
+       sips -s format jpeg -s formatOptions 85 og.png --out public/images/og-image.jpg -->
+<link rel="stylesheet" href="https://use.typekit.net/nln6hzq.css">
+<style>
+  :root {
+    --navy: #112378; --blue: #0033ff; --green: #17c37b; --yellow: #ffd007;
+    --cream: #fffbeb; --cedar: #fff5cc; --gray: #cfd3e4;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body { display: grid; grid-template-columns: 660px 540px; background: var(--cream); font-family: freight-sans-pro, sans-serif; color: var(--navy); }
+  .text { position: relative; padding: 56px 56px 48px 64px; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .brand img { height: 64px; }
+  .brand span { font-family: mono45-headline, sans-serif; font-size: 34px; font-weight: 500; letter-spacing: .02em; }
+  h1 { margin-top: 44px; font-family: mono45-headline, sans-serif; font-weight: 500; font-size: 92px; line-height: .95; text-transform: uppercase; }
+  .sub { margin-top: 26px; font-family: freight-macro-pro, sans-serif; font-weight: 500; font-size: 34px; line-height: 1.2; }
+  .facts { margin-top: auto; display: flex; flex-wrap: wrap; gap: 12px; }
+  .facts span { font-size: 24px; font-weight: 500; padding: 8px 16px; border-radius: 22px; background: var(--cedar); border: 2px solid var(--yellow); }
+  .facts span.close { background: var(--yellow); }
+  .url { margin-top: 22px; font-family: mono45-headline, sans-serif; font-size: 26px; color: var(--blue); letter-spacing: .02em; }
+  .photo { position: relative; background: url(../public/images/cfp-speaker.jpg) 88% 0 / auto 840px no-repeat; }
+  .photo::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 14px; background: var(--green); }
+</style>
+</head>
+<body>
+  <div class="text">
+    <div class="brand"><img src="../public/images/cjs-icon-blue.svg" alt=""><span>CascadiaJS 2027</span></div>
+    <h1>Call for<br>Presenters</h1>
+    <p class="sub">Pitch your talk in a 2-minute video, submitted from your AI agent.</p>
+    <div class="facts">
+      <span>June 7–8, 2027 · Seattle, WA</span>
+      <span class="close">CFP closes Jan 10</span>
+    </div>
+    <p class="url">cfp.cascadiajs.com</p>
+  </div>
+  <div class="photo"></div>
+</body>
+</html>
